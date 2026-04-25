@@ -179,7 +179,7 @@ public class DataManager {
     }
 
     public static List<String> listClasses() {
-        cleanupClassTrash(); // Dọn rác lớp học
+        cleanupClassTrash();
         List<String> list = new ArrayList<>();
         File dir = new File(CLASS_DIR);
         if (dir.exists()) {
@@ -190,7 +190,30 @@ public class DataManager {
         return list;
     }
 
-    // Đưa lớp vào thùng rác
+    // --- LOGIC MỚI: ĐỔI TÊN LỚP HỌC (VÀ CẢ THƯ MỤC CỦA NÓ) ---
+    public static void renameClass(String oldName, String newName) {
+        File oldFile = new File(CLASS_DIR + oldName + ".dat");
+        File newFile = new File(CLASS_DIR + newName + ".dat");
+        File oldDir = new File(CLASS_DIR + oldName); // Thư mục chứa đề thi, hình ảnh
+        File newDir = new File(CLASS_DIR + newName);
+
+        if (oldFile.exists() && !newFile.exists()) {
+            if (oldFile.renameTo(newFile)) {
+                // Đổi tên thư mục dữ liệu lớp học đi kèm
+                if (oldDir.exists()) {
+                    oldDir.renameTo(newDir);
+                }
+
+                // Mở file .dat ra, sửa tên class bên trong và lưu lại
+                model.ClassRoom cr = loadClass(newName);
+                if (cr != null) {
+                    cr.className = newName;
+                    saveClass(cr);
+                }
+            }
+        }
+    }
+
     public static void deleteClass(String className) {
         try {
             File trashDir = new File(CLASS_TRASH_DIR); if (!trashDir.exists()) trashDir.mkdirs();
@@ -199,7 +222,6 @@ public class DataManager {
         } catch(Exception e) {}
     }
 
-    // --- CÁC HÀM MỚI CHO THÙNG RÁC LỚP HỌC ---
     public static List<TrashedItem> listTrashedClasses() {
         List<TrashedItem> trashed = new ArrayList<>();
         File dir = new File(CLASS_TRASH_DIR);
@@ -240,10 +262,10 @@ public class DataManager {
         if (src.renameTo(dest)) {
             model.ClassRoom cr = loadClass(baseName);
             if (cr != null) {
-                cr.className = baseName; // Cập nhật tên lớp bên trong object nếu bị trùng tên
+                cr.className = baseName;
                 saveClass(cr);
             }
-            dest.setLastModified(originalTime); // Giữ nguyên ngày tạo
+            dest.setLastModified(originalTime);
         }
     }
 

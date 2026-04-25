@@ -31,21 +31,25 @@ public class ClassManagementDialog extends JDialog {
         pnlList.add(new JScrollPane(tblClasses), BorderLayout.CENTER);
         add(pnlList, BorderLayout.CENTER);
 
+        // Grid 3 hàng x 2 cột = Đủ 6 nút vuông vắn
         JPanel pnlBtns = new JPanel(new GridLayout(3, 2, 5, 5));
         pnlBtns.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+
         JButton btnNew = new JButton("➕ Tạo lớp mới");
         JButton btnOpen = new JButton("✔ Chọn lớp này");
+        JButton btnRename = new JButton("📝 Đổi tên lớp");
         JButton btnEdit = new JButton("✏ Sửa sĩ số / Danh sách");
         JButton btnDel = new JButton("❌ Xóa lớp");
         JButton btnTrash = new JButton("🗑 Thùng rác lớp học");
 
         pnlBtns.add(btnNew); pnlBtns.add(btnOpen);
-        pnlBtns.add(btnEdit); pnlBtns.add(btnDel);
-        pnlBtns.add(btnTrash);
+        pnlBtns.add(btnRename); pnlBtns.add(btnEdit);
+        pnlBtns.add(btnDel); pnlBtns.add(btnTrash);
         add(pnlBtns, BorderLayout.SOUTH);
 
         loadClasses();
 
+        // 1. TẠO LỚP MỚI
         btnNew.addActionListener(e -> {
             String name = JOptionPane.showInputDialog(this, "Nhập tên lớp mới (VD: 10A1):");
             if (name == null || name.trim().isEmpty()) return;
@@ -62,6 +66,7 @@ public class ClassManagementDialog extends JDialog {
             } catch(Exception ex) { JOptionPane.showMessageDialog(this, "Sĩ số phải là số nguyên!"); }
         });
 
+        // 2. CHỌN LỚP ĐỂ CHẤM
         btnOpen.addActionListener(e -> {
             int r = tblClasses.getSelectedRow();
             if (r != -1) {
@@ -70,6 +75,22 @@ public class ClassManagementDialog extends JDialog {
             } else JOptionPane.showMessageDialog(this, "Vui lòng chọn một lớp trong bảng!");
         });
 
+        // 3. ĐỔI TÊN LỚP (TÍNH NĂNG MỚI)
+        btnRename.addActionListener(e -> {
+            int r = tblClasses.getSelectedRow();
+            if (r != -1) {
+                String oldName = tblClasses.getValueAt(r, 0).toString();
+                String newName = JOptionPane.showInputDialog(this, "Nhập tên mới cho lớp '" + oldName + "':", oldName);
+                if (newName != null && !newName.trim().isEmpty() && !newName.equals(oldName)) {
+                    DataManager.renameClass(oldName, newName.trim());
+                    loadClasses();
+                }
+            } else {
+                JOptionPane.showMessageDialog(this, "Vui lòng chọn lớp cần đổi tên!");
+            }
+        });
+
+        // 4. SỬA SĨ SỐ VÀ DANH SÁCH
         btnEdit.addActionListener(e -> {
             int r = tblClasses.getSelectedRow();
             if (r != -1) {
@@ -86,6 +107,7 @@ public class ClassManagementDialog extends JDialog {
             } else JOptionPane.showMessageDialog(this, "Vui lòng chọn lớp cần sửa!");
         });
 
+        // 5. XÓA LỚP
         btnDel.addActionListener(e -> {
             int r = tblClasses.getSelectedRow();
             if (r != -1) {
@@ -97,10 +119,10 @@ public class ClassManagementDialog extends JDialog {
             } else JOptionPane.showMessageDialog(this, "Vui lòng chọn lớp cần xóa!");
         });
 
-        // ĐÃ CẬP NHẬT: KẾT NỐI VỚI CLASS TRASH DIALOG
+        // 6. XEM THÙNG RÁC
         btnTrash.addActionListener(e -> {
             new ClassTrashDialog(this).setVisible(true);
-            loadClasses(); // Load lại danh sách lớp sau khi đóng thùng rác (phòng trường hợp vừa khôi phục)
+            loadClasses();
         });
 
         setLocationRelativeTo(parent);
@@ -117,7 +139,7 @@ public class ClassManagementDialog extends JDialog {
     public ClassRoom getSelectedClass() { return selectedClass; }
 }
 
-// ... Giữ nguyên phần ClassEditorDialog như trước ...
+// ... Phần ClassEditorDialog vẫn giữ nguyên y hệt để bảo toàn nút Xuất Điểm ...
 class ClassEditorDialog extends JDialog {
     private ClassRoom cr;
     private boolean saved = false;
