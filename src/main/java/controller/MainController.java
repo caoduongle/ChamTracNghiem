@@ -211,13 +211,21 @@ public class MainController {
             try {
                 String path = fileChooser.getSelectedFile().getAbsolutePath();
                 if (!path.endsWith(".xlsx")) path += ".xlsx";
-                if (type == 1) service.ExcelService.exportScoreTable(currentSession.getReports(), path);
-                else service.ExcelService.exportAnswerKey(currentConfig, path);
+
+                // GỌI HÀM MỚI BÊN EXCEL SERVICE
+                if (type == 1) {
+                    service.ExcelService.exportExamScoreTable(currentClassRoom, currentSession, path);
+                } else {
+                    service.ExcelService.exportAnswerKey(currentConfig, path);
+                }
+
                 JOptionPane.showMessageDialog(view, "Xuất file thành công!");
-            } catch (Exception ex) { ex.printStackTrace(); }
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                JOptionPane.showMessageDialog(view, "Lỗi khi xuất file: " + ex.getMessage());
+            }
         }
     }
-
     private void deleteSelectedReport() {
         int row = view.getTblResults().getSelectedRow();
         if (row == -1) return;

@@ -5,6 +5,7 @@ import service.DataManager;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.io.File;
 import java.util.List;
 
 public class ClassManagementDialog extends JDialog {
@@ -30,7 +31,6 @@ public class ClassManagementDialog extends JDialog {
         pnlList.add(new JScrollPane(tblClasses), BorderLayout.CENTER);
         add(pnlList, BorderLayout.CENTER);
 
-        // Nâng cấp Layout thành 3x2 để chứa thêm nút Sửa lớp
         JPanel pnlBtns = new JPanel(new GridLayout(3, 2, 5, 5));
         pnlBtns.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
         JButton btnNew = new JButton("➕ Tạo lớp mới");
@@ -72,7 +72,7 @@ public class ClassManagementDialog extends JDialog {
             } else JOptionPane.showMessageDialog(this, "Vui lòng chọn một lớp trong bảng!");
         });
 
-        // 3. SỬA SĨ SỐ VÀ DANH SÁCH (TÍNH NĂNG MỚI)
+        // 3. SỬA SĨ SỐ VÀ DANH SÁCH
         btnEdit.addActionListener(e -> {
             int r = tblClasses.getSelectedRow();
             if (r != -1) {
@@ -125,7 +125,6 @@ class ClassEditorDialog extends JDialog {
     private JTable tbl;
     private DefaultTableModel m;
 
-    // Constructor 1: Dành cho Tạo mới
     public ClassEditorDialog(JDialog parent, String name, int size) {
         super(parent, "Nhập danh sách học sinh - Lớp " + name, true);
         cr = new ClassRoom();
@@ -137,13 +136,11 @@ class ClassEditorDialog extends JDialog {
         }
     }
 
-    // Constructor 2: Dành cho Chỉnh sửa lớp cũ
     public ClassEditorDialog(JDialog parent, ClassRoom existingClass) {
         super(parent, "Sửa danh sách học sinh - Lớp " + existingClass.className, true);
         this.cr = existingClass;
         int size = existingClass.students.size();
         initUI(size);
-        // Đổ dữ liệu cũ vào bảng
         for(int i = 0; i < size; i++) {
             m.setValueAt(existingClass.students.get(i).stt, i, 0);
             m.setValueAt(existingClass.students.get(i).name, i, 1);
@@ -151,10 +148,9 @@ class ClassEditorDialog extends JDialog {
     }
 
     private void initUI(int initialSize) {
-        setSize(500, 600);
+        setSize(550, 600);
         setLayout(new BorderLayout(5, 5));
 
-        // Thanh đổi sĩ số ở trên cùng
         JPanel pnlTop = new JPanel(new FlowLayout(FlowLayout.LEFT));
         pnlTop.add(new JLabel("Sĩ số hiện tại: "));
         JTextField txtSize = new JTextField(String.valueOf(initialSize), 5);
@@ -170,7 +166,6 @@ class ClassEditorDialog extends JDialog {
         tbl.setFont(new Font("Arial", Font.PLAIN, 14));
         add(new JScrollPane(tbl), BorderLayout.CENTER);
 
-        // Sự kiện đổi Sĩ số (Thêm dòng trống hoặc cắt bớt dòng)
         btnApplySize.addActionListener(e -> {
             try {
                 int newSize = Integer.parseInt(txtSize.getText());
@@ -179,35 +174,63 @@ class ClassEditorDialog extends JDialog {
 
                 int currentSize = m.getRowCount();
                 if(newSize > currentSize) {
-                    // Thêm dòng mới
                     for(int i = currentSize; i < newSize; i++) m.addRow(new Object[]{i + 1, ""});
                 } else if (newSize < currentSize) {
-                    // Cắt bớt dòng thừa
                     m.setRowCount(newSize);
                 }
             } catch(Exception ex) { JOptionPane.showMessageDialog(this, "Sĩ số phải là số!"); }
         });
 
+        // ---------------- THÊM NÚT XUẤT BẢNG ĐIỂM TỔNG TẠI ĐÂY ----------------
         JPanel pnlBottom = new JPanel(new BorderLayout());
         pnlBottom.add(new JLabel(" Gợi ý: Hãy đặt tên file ảnh chụp là '1.jpg' cho học sinh STT 1."), BorderLayout.NORTH);
 
+        JPanel pnlBottomBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton btnExport = new JButton("📊 Xuất Bảng Điểm TỔNG HỢP");
+        btnExport.setFont(new Font("Arial", Font.BOLD, 14));
+        btnExport.setForeground(new Color(0, 102, 51));
+
         JButton btnSave = new JButton("💾 Lưu Danh Sách Lớp");
         btnSave.setFont(new Font("Arial", Font.BOLD, 14));
+
+        pnlBottomBtns.add(btnExport);
+        pnlBottomBtns.add(btnSave);
+        pnlBottom.add(pnlBottomBtns, BorderLayout.SOUTH);
+
+        btnExport.addActionListener(e -> {
+            if (cr.students.isEmpty() || !new File("data/classes/" + cr.className + ".dat").exists()) {
+                JOptionPane.showMessageDialog(this, "Vui lòng 'Lưu Danh Sách' lớp này lần đầu trước khi xuất bảng điểm!");
+                return;
+            }
+            JFileChooser fileChooser = new JFileChooser();
+            fileChooser.setSelectedFile(new File("BangDiemTong_" + cr.className + ".xlsx"));
+            if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+                try {
+                    String path = fileChooser.getSelectedFile().getAbsolutePath();
+                    if (!path.endsWith(".xlsx")) path += ".xlsx";
+                    service.ExcelService.exportClassScoreTable(cr, path);
+                    JOptionPane.showMessageDialog(this, "Xuất bảng điểm tổng thành công!");
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    JOptionPane.showMessageDialog(this, "Lỗi xuất file: " + ex.getMessage());
+                }
+            }
+        });
+
         btnSave.addActionListener(e -> {
             if (tbl.isEditing()) tbl.getCellEditor().stopCellEditing();
-            cr.students.clear(); // Xóa sạch để ghi lại từ bảng
+            cr.students.clear();
             for(int i = 0; i < m.getRowCount(); i++) {
                 try {
                     int stt = Integer.parseInt(m.getValueAt(i, 0).toString());
                     String sName = m.getValueAt(i, 1) != null ? m.getValueAt(i, 1).toString() : "";
                     cr.students.add(new ClassRoom.Student(stt, sName));
-                } catch(Exception ex) {} // Bỏ qua dòng lỗi STT
+                } catch(Exception ex) {}
             }
             saved = true;
             dispose();
         });
 
-        pnlBottom.add(btnSave, BorderLayout.SOUTH);
         add(pnlBottom, BorderLayout.SOUTH);
         setLocationRelativeTo(getParent());
     }
