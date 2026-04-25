@@ -12,6 +12,9 @@ target/
 *.iws
 *.iml
 *.ipr
+.idea/
+out/
+gen/
 
 ### Eclipse ###
 .apt_generated
@@ -37,3 +40,23 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+# Dữ liệu người dùng (Tuyệt đối không đẩy lên để bảo mật)
+data/*.dat
+data/trash/
+data/images/
+data/settings.properties
+
+# Chỉ giữ lại ảnh hướng dẫn
+!data/tutorial/
+
+### Custom App Files ###
+*.log
+
+*.db
+*.sqlite
+*.sqlite3
+dependency-reduced-pom.xml
+*.mv.db
+*secret.properties
+.env
