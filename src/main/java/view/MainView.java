@@ -7,7 +7,6 @@ import java.awt.*;
 public class MainView extends JFrame {
 
     private JButton btnBackToMenu;
-    private JButton btnSelectFolder;
     private JButton btnSetAnswerKey;
     private JButton btnStartGrading;
     private JLabel lblImagePreview;
@@ -17,8 +16,6 @@ public class MainView extends JFrame {
     private JButton btnDeleteResult;
     private JComboBox<String> cbxSortResults;
     private JButton btnExportScores, btnExportConfig;
-    private JButton btnDeletePermanent;
-    private JButton btnSelectAll;
 
     public MainView() {
         setTitle("Phần mềm Chấm Trắc Nghiệm - Team N7");
@@ -33,33 +30,26 @@ public class MainView extends JFrame {
     private void initUI() {
         JPanel panelControl = new JPanel(new FlowLayout(FlowLayout.LEFT));
 
+        // Khởi tạo các nút điều khiển
         btnBackToMenu = new JButton("⬅ Trở về Menu");
-        btnSelectFolder = new JButton("1. Chọn thư mục bài thi");
-        btnSetAnswerKey = new JButton("2. Cài đặt đáp án");
-        btnStartGrading = new JButton("3. Bắt đầu chấm");
+        btnSetAnswerKey = new JButton("1. Cài đặt đáp án");
+        btnStartGrading = new JButton("2. Bắt đầu chấm");
 
         btnDeleteResult = new JButton("❌ Xóa bài chọn");
         cbxSortResults = new JComboBox<>(new String[]{"Sắp xếp: Mặc định", "Sắp xếp: SBD", "Sắp xếp: Điểm (Cao-Thấp)"});
         btnExportScores = new JButton("📊 Xuất Bảng Điểm");
         btnExportConfig = new JButton("📝 Xuất Đáp Án");
 
-        btnSelectAll = new JButton("☑ Chọn tất cả");
-        panelControl.add(btnSelectAll);
-        panelControl.add(btnExportScores);
-        panelControl.add(btnExportConfig);
+        // Đưa các nút vào Panel theo thứ tự logic gọn gàng
         panelControl.add(btnBackToMenu);
-        panelControl.add(btnSelectFolder);
         panelControl.add(btnSetAnswerKey);
         panelControl.add(btnStartGrading);
-        panelControl.add(new JLabel(" | ")); // Vạch ngăn cách
+        panelControl.add(new JLabel("  |  ")); // Vạch ngăn cách
         panelControl.add(btnDeleteResult);
         panelControl.add(cbxSortResults);
+        panelControl.add(btnExportScores);
+        panelControl.add(btnExportConfig);
 
-        add(panelControl, BorderLayout.NORTH);
-        panelControl.add(btnBackToMenu);
-        panelControl.add(btnSelectFolder);
-        panelControl.add(btnSetAnswerKey);
-        panelControl.add(btnStartGrading);
         add(panelControl, BorderLayout.NORTH);
 
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
@@ -87,11 +77,15 @@ public class MainView extends JFrame {
         add(panelStatus, BorderLayout.SOUTH);
     }
 
+    // Các hàm Getter cho Controller gọi
     public JButton getBtnBackToMenu() { return btnBackToMenu; }
-    public JButton getBtnSelectFolder() { return btnSelectFolder; }
     public JButton getBtnSetAnswerKey() { return btnSetAnswerKey; }
     public JButton getBtnStartGrading() { return btnStartGrading; }
     public JTable getTblResults() { return tblResults; }
+    public JButton getBtnDeleteResult() { return btnDeleteResult; }
+    public JComboBox<String> getCbxSortResults() { return cbxSortResults; }
+    public JButton getBtnExportScores() { return btnExportScores; }
+    public JButton getBtnExportConfig() { return btnExportConfig; }
 
     public void setImagePreview(Icon imageIcon) {
         lblImagePreview.setText("");
@@ -113,10 +107,4 @@ public class MainView extends JFrame {
         lblStatus.setText("Trạng thái: Vui lòng chọn đề thi để tiếp tục");
         setTitle("Phần mềm Chấm Trắc Nghiệm - Team N7");
     }
-    public JButton getBtnDeleteResult() { return btnDeleteResult; }
-    public JComboBox<String> getCbxSortResults() { return cbxSortResults; }
-    public JButton getBtnExportScores() { return btnExportScores; }
-    public JButton getBtnExportConfig() { return btnExportConfig; }
-    public JButton getBtnDeletePermanent() { return btnDeletePermanent; }
-    public JButton getBtnSelectAll() { return btnSelectAll; }
 }

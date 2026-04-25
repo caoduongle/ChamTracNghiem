@@ -190,21 +190,17 @@ public class DataManager {
         return list;
     }
 
-    // --- LOGIC MỚI: ĐỔI TÊN LỚP HỌC (VÀ CẢ THƯ MỤC CỦA NÓ) ---
     public static void renameClass(String oldName, String newName) {
         File oldFile = new File(CLASS_DIR + oldName + ".dat");
         File newFile = new File(CLASS_DIR + newName + ".dat");
-        File oldDir = new File(CLASS_DIR + oldName); // Thư mục chứa đề thi, hình ảnh
+        File oldDir = new File(CLASS_DIR + oldName);
         File newDir = new File(CLASS_DIR + newName);
 
         if (oldFile.exists() && !newFile.exists()) {
             if (oldFile.renameTo(newFile)) {
-                // Đổi tên thư mục dữ liệu lớp học đi kèm
                 if (oldDir.exists()) {
                     oldDir.renameTo(newDir);
                 }
-
-                // Mở file .dat ra, sửa tên class bên trong và lưu lại
                 model.ClassRoom cr = loadClass(newName);
                 if (cr != null) {
                     cr.className = newName;
@@ -288,5 +284,28 @@ public class DataManager {
         }
     }
 
-    public static boolean shouldShowTutorial() { return true; }
+    // ==========================================
+    // ============ HƯỚNG DẪN SỬ DỤNG ===========
+    // ==========================================
+    private static final String PREF_FILE = "data/tutorial_hidden.flag";
+
+    // ĐÃ THÊM: Hàm lưu tùy chọn bật/tắt hướng dẫn
+    public static void setTutorialPreference(boolean showTutorial) {
+        try {
+            File dir = new File("data");
+            if (!dir.exists()) dir.mkdirs();
+            File flagFile = new File(PREF_FILE);
+
+            if (showTutorial) {
+                if (flagFile.exists()) flagFile.delete(); // Xóa file cờ -> Sẽ hiện hướng dẫn
+            } else {
+                flagFile.createNewFile(); // Tạo file cờ -> Đánh dấu không hiện nữa
+            }
+        } catch (Exception e) { e.printStackTrace(); }
+    }
+
+    // ĐÃ SỬA: Kiểm tra xem file cờ có tồn tại không
+    public static boolean shouldShowTutorial() {
+        return !new File(PREF_FILE).exists();
+    }
 }

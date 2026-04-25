@@ -12,7 +12,7 @@ public class TutorialDialog extends JDialog {
     private JButton btnPrev, btnNext;
     private JCheckBox chkDoNotShow;
     private int currentStep = 1;
-    private final int MAX_STEPS = 21; // Tổng số ảnh hướng dẫn
+    private final int MAX_STEPS = 26; // Tổng số ảnh hướng dẫn
     private final String TUTORIAL_PATH = "data/tutorial/";
 
     public TutorialDialog(JFrame parent) {
@@ -92,7 +92,7 @@ public class TutorialDialog extends JDialog {
 
     private void savePrefAndClose() {
         // Nếu tích vào ô "Không hiện lại" -> lưu false, ngược lại lưu true
-       // DataManager.setTutorialPreference(!chkDoNotShow.isSelected());
-      //  dispose();
+       DataManager.setTutorialPreference(!chkDoNotShow.isSelected());
+        dispose();
     }
 }

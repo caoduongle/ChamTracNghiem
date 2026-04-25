@@ -129,10 +129,6 @@ public class MainController {
     }
 
     private void initController() {
-        if (view.getBtnSelectFolder() != null) {
-            view.getBtnSelectFolder().setVisible(false);
-        }
-
         view.getBtnBackToMenu().addActionListener(e -> {
             int confirm = JOptionPane.showConfirmDialog(view, "Bạn muốn lưu và trở về màn hình Chọn Đề?", "Xác nhận", JOptionPane.YES_NO_OPTION);
             if (confirm == JOptionPane.YES_OPTION) {
@@ -273,9 +269,6 @@ public class MainController {
         }
     }
 
-    // ==========================================================
-    // ĐÃ FIX: HÀM XÓA NHIỀU HỌC SINH CÙNG LÚC (MASS DELETE)
-    // ==========================================================
     private void deleteSelectedReport() {
         int[] selectedRows = view.getTblResults().getSelectedRows();
 
@@ -289,13 +282,11 @@ public class MainController {
                 "Xác nhận xóa hàng loạt", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
 
         if (confirm == JOptionPane.YES_OPTION) {
-            // 1. Lấy tất cả STT cần xóa
             List<String> sttsToDelete = new ArrayList<>();
             for (int row : selectedRows) {
                 sttsToDelete.add(currentRowStts.get(row));
             }
 
-            // 2. Xóa dữ liệu ngầm
             for (String stt : sttsToDelete) {
                 model.OMRModels.ExamReport report = reportDatabase.get(stt);
 
@@ -314,7 +305,6 @@ public class MainController {
                 }
             }
 
-            // 3. Lưu lại và làm mới giao diện 1 lần duy nhất
             if (currentSession != null) {
                 service.DataManager.saveSession(currentSession, currentClassRoom.className);
             }

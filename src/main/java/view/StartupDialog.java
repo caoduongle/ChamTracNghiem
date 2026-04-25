@@ -20,7 +20,7 @@ public class StartupDialog extends JDialog {
     private JButton btnNew, btnOpen, btnDelete, btnTrash, btnTutorial, btnRename, btnBackToClass;
     private String selectedExam = null;
     private boolean isNew = false;
-    private boolean goBackToClass = false; // Cờ hiệu quay lại lớp
+    private boolean goBackToClass = false;
 
     private JTextField txtSearch;
     private JComboBox<String> cbxDateFilter;
@@ -94,7 +94,6 @@ public class StartupDialog extends JDialog {
         JPanel pnlBottomControls = new JPanel(new BorderLayout(0, 5));
         pnlBottomControls.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
-        // Đổi thành GridLayout 4x2 để nhét thêm nút
         JPanel pnlBtns = new JPanel(new GridLayout(4, 2, 5, 5));
         btnNew = new JButton("Chấm đề mới");
         btnOpen = new JButton("Mở đề cũ");
@@ -110,7 +109,7 @@ public class StartupDialog extends JDialog {
         pnlBtns.add(btnRename); pnlBtns.add(btnDelete);
         pnlBtns.add(btnTrash); pnlBtns.add(btnTutorial);
         pnlBtns.add(btnBackToClass);
-        pnlBtns.add(new JLabel("")); // Cột trống cho đẹp đội hình
+        pnlBtns.add(new JLabel(""));
 
         pnlBottomControls.add(pnlBtns, BorderLayout.CENTER);
         add(pnlBottomControls, BorderLayout.SOUTH);
@@ -171,10 +170,16 @@ public class StartupDialog extends JDialog {
             new TrashDialog(this, currentClassName).setVisible(true); refreshExamList();
         });
 
-        // SỰ KIỆN QUAY LẠI LỚP
         btnBackToClass.addActionListener(e -> {
             goBackToClass = true;
             dispose();
+        });
+
+        // ==========================================================
+        // ĐÃ SỬA: Gắn sự kiện cho nút Hướng dẫn gọi đến form Tutorial
+        // ==========================================================
+        btnTutorial.addActionListener(e -> {
+            new TutorialDialog(parent).setVisible(true);
         });
 
         setLocationRelativeTo(parent);
