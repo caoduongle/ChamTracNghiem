@@ -156,7 +156,8 @@ public class MainController {
                         int row = view.getTblResults().rowAtPoint(p);
                         if (row != -1) {
                             String low = droppedFiles.get(0).getName().toLowerCase();
-                            if (low.endsWith(".jpg") || low.endsWith(".png")) {
+                            // Hỗ trợ cả JPG, JPEG và PNG
+                            if (low.endsWith(".jpg") || low.endsWith(".png") || low.endsWith(".jpeg")) {
                                 String stt = currentRowStts.get(row);
                                 assignedFiles.put(stt, droppedFiles.get(0));
                                 refreshTable();
@@ -168,7 +169,7 @@ public class MainController {
                     int autoCount = 0;
                     for (File file : droppedFiles) {
                         String low = file.getName().toLowerCase();
-                        if (low.endsWith(".jpg") || low.endsWith(".png")) {
+                        if (low.endsWith(".jpg") || low.endsWith(".png") || low.endsWith(".jpeg")) {
                             String rawName = file.getName().substring(0, file.getName().lastIndexOf('.'));
                             if (currentRowStts.contains(rawName)) {
                                 assignedFiles.put(rawName, file);
@@ -180,7 +181,7 @@ public class MainController {
                     if (autoCount > 0) {
                         view.setStatusMessage("Đã gán tự động " + autoCount + " bài thi dựa theo STT.");
                     } else if (droppedFiles.size() > 1) {
-                        JOptionPane.showMessageDialog(view, "Không có file nào khớp với STT của lớp này (VD: file 1.jpg sẽ tự gán cho STT 1).");
+                        JOptionPane.showMessageDialog(view, "Không có file nào khớp với STT của lớp này (VD: file 1.png sẽ tự gán cho STT 1).");
                     }
                 } catch (Exception ex) { ex.printStackTrace(); }
             }
@@ -252,7 +253,13 @@ public class MainController {
             if (report != null && report.imagePath != null) {
                 try {
                     java.nio.file.Files.deleteIfExists(new File(report.imagePath).toPath());
-                    java.nio.file.Files.deleteIfExists(new File(report.imagePath.replace(".jpg", "_processed.jpg")).toPath());
+
+                    // Tự động tìm đúng đuôi file để xóa cả file _processed
+                    int dotIndex = report.imagePath.lastIndexOf('.');
+                    if (dotIndex > 0) {
+                        String ext = report.imagePath.substring(dotIndex);
+                        java.nio.file.Files.deleteIfExists(new File(report.imagePath.replace(ext, "_processed" + ext)).toPath());
+                    }
                 } catch (Exception ex) {}
             }
 
@@ -293,7 +300,13 @@ public class MainController {
                 if (report != null && report.imagePath != null) {
                     try {
                         java.nio.file.Files.deleteIfExists(new File(report.imagePath).toPath());
-                        java.nio.file.Files.deleteIfExists(new File(report.imagePath.replace(".jpg", "_processed.jpg")).toPath());
+
+                        // Tự động tìm đúng đuôi file để xóa cả file _processed
+                        int dotIndex = report.imagePath.lastIndexOf('.');
+                        if (dotIndex > 0) {
+                            String ext = report.imagePath.substring(dotIndex);
+                            java.nio.file.Files.deleteIfExists(new File(report.imagePath.replace(ext, "_processed" + ext)).toPath());
+                        }
                     } catch (Exception ex) {}
                 }
 
@@ -346,12 +359,12 @@ public class MainController {
                     if (!droppedFiles.isEmpty()) {
                         File file = droppedFiles.get(0);
                         String low = file.getName().toLowerCase();
-                        if (low.endsWith(".jpg") || low.endsWith(".png")) {
+                        if (low.endsWith(".jpg") || low.endsWith(".png") || low.endsWith(".jpeg")) {
                             assignedFiles.put(stt, file);
                             refreshTable();
                             dropDialog.dispose();
                         } else {
-                            JOptionPane.showMessageDialog(dropDialog, "Vui lòng kéo file định dạng ảnh (.jpg, .png)!");
+                            JOptionPane.showMessageDialog(dropDialog, "Vui lòng kéo file định dạng ảnh (.jpg, .png, .jpeg)!");
                         }
                     }
                 } catch (Exception ex) { ex.printStackTrace(); }
@@ -423,8 +436,16 @@ public class MainController {
         pnlTable.add(new JLabel("  Tổng số ý sai: " + wrongCount, SwingConstants.LEFT), BorderLayout.SOUTH);
 
         JLabel lblImage = new JLabel("", SwingConstants.CENTER);
+
+        // Tự động phân giải đuôi file cho ảnh đã xử lý
         final String pathOriginal = report.imagePath;
-        final String pathProcessed = report.imagePath.replace(".jpg", "_processed.jpg");
+        String processedTemp = pathOriginal;
+        int dotIndex = pathOriginal.lastIndexOf('.');
+        if (dotIndex > 0) {
+            String ext = pathOriginal.substring(dotIndex);
+            processedTemp = pathOriginal.replace(ext, "_processed" + ext);
+        }
+        final String pathProcessed = processedTemp;
 
         java.util.function.Consumer<String> updateImage = (path) -> {
             File f = new File(path);
@@ -511,13 +532,20 @@ public class MainController {
                                 File imageDir = new File("data/classes/" + currentClassRoom.className + "/images/" + currentSession.getExamName());
                                 if (!imageDir.exists()) imageDir.mkdirs();
 
-                                File destFile = new File(imageDir, stt + ".jpg");
+                                // Lấy đuôi file động (.png, .jpeg, .jpg)
+                                String originalExt = ".jpg";
+                                int extIndex = file.getName().lastIndexOf('.');
+                                if (extIndex > 0) {
+                                    originalExt = file.getName().substring(extIndex);
+                                }
+
+                                File destFile = new File(imageDir, stt + originalExt);
                                 java.nio.file.Files.copy(file.toPath(), destFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                                 newReport.imagePath = destFile.getAbsolutePath();
 
-                                File originalProcessed = new File(file.getAbsolutePath().replace(".jpg", "_processed.jpg"));
+                                File originalProcessed = new File(file.getAbsolutePath().replace(originalExt, "_processed" + originalExt));
                                 if (originalProcessed.exists()) {
-                                    File destProcessed = new File(imageDir, stt + "_processed.jpg");
+                                    File destProcessed = new File(imageDir, stt + "_processed" + originalExt);
                                     java.nio.file.Files.copy(originalProcessed.toPath(), destProcessed.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                                     originalProcessed.delete();
                                 }
