@@ -2,6 +2,8 @@ package view;
 
 import model.ExamConfig;
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook; // THÊM IMPORT NÀY
+
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
@@ -14,10 +16,16 @@ import java.io.FileInputStream;
 import java.util.ArrayList;
 import java.util.List;
 
+// THÊM THƯ VIỆN KÉO THẢ
+import java.awt.dnd.DropTarget;
+import java.awt.dnd.DropTargetDropEvent;
+import java.awt.dnd.DnDConstants;
+import java.awt.datatransfer.DataFlavor;
+
 public class AnswerKeyDialog extends JDialog {
     private JTextField txtP1, txtP2, txtP3;
     private JTextField txtScoreP1, txtScoreP3, txtScoreP2_1, txtScoreP2_2, txtScoreP2_3, txtScoreP2_4;
-    private JLabel lblTotalPossibleScore; // NHÃN HIỂN THỊ TỔNG ĐIỂM
+    private JLabel lblTotalPossibleScore;
     private JTable tblAnswers;
     private DefaultTableModel tableModel;
     private JButton btnSave, btnImport;
@@ -53,7 +61,6 @@ public class AnswerKeyDialog extends JDialog {
         pnlBaremInputs.add(new JLabel(" P.II (4 ý):")); txtScoreP2_4 = new JTextField("1.0"); pnlBaremInputs.add(txtScoreP2_4);
         pnlBaremInputs.add(new JLabel(" P.III/Câu:")); txtScoreP3 = new JTextField("0.25"); pnlBaremInputs.add(txtScoreP3);
 
-        // Vùng hiển thị tổng điểm nổi bật
         lblTotalPossibleScore = new JLabel("TỔNG ĐIỂM: 10.0", SwingConstants.CENTER);
         lblTotalPossibleScore.setFont(new Font("Arial", Font.BOLD, 18));
         lblTotalPossibleScore.setForeground(Color.BLUE);
@@ -73,22 +80,19 @@ public class AnswerKeyDialog extends JDialog {
 
         // 4. Nút chức năng
         JPanel pnlBottom = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        btnImport = new JButton("Import Excel");
+        btnImport = new JButton("Import Excel (Hoặc Kéo Thả)");
         btnImport.addActionListener(e -> importFromExcel());
         btnSave = new JButton("Lưu cấu hình & Đóng");
         pnlBottom.add(btnImport);
         pnlBottom.add(btnSave);
         add(pnlBottom, BorderLayout.SOUTH);
 
-        // GẮN SỰ KIỆN TỰ ĐỘNG TÍNH TOÁN
         addAutoCalculateListeners();
+        enableDragAndDrop();
 
         setLocationRelativeTo(parent);
     }
 
-    /**
-     * Gắn bộ lắng nghe thay đổi vào tất cả các ô nhập liệu
-     */
     private void addAutoCalculateListeners() {
         DocumentListener dl = new DocumentListener() {
             public void insertUpdate(DocumentEvent e) { calculateTotalPossibleScore(); }
@@ -96,20 +100,15 @@ public class AnswerKeyDialog extends JDialog {
             public void changedUpdate(DocumentEvent e) { calculateTotalPossibleScore(); }
         };
 
-        // Lắng nghe số lượng câu
         txtP1.getDocument().addDocumentListener(dl);
         txtP2.getDocument().addDocumentListener(dl);
         txtP3.getDocument().addDocumentListener(dl);
 
-        // Lắng nghe barem điểm
         txtScoreP1.getDocument().addDocumentListener(dl);
         txtScoreP3.getDocument().addDocumentListener(dl);
-        txtScoreP2_4.getDocument().addDocumentListener(dl); // Chỉ cần lấy điểm tối đa của P2 (đúng 4 ý) để tính tổng
+        txtScoreP2_4.getDocument().addDocumentListener(dl);
     }
 
-    /**
-     * Hàm tính toán tổng điểm tối đa theo thời gian thực
-     */
     private void calculateTotalPossibleScore() {
         try {
             int n1 = Integer.parseInt(txtP1.getText().trim());
@@ -121,19 +120,16 @@ public class AnswerKeyDialog extends JDialog {
             double s3 = Double.parseDouble(txtScoreP3.getText().trim());
 
             double total = (n1 * s1) + (n2 * s2Max) + (n3 * s3);
-
-            // Làm tròn 2 chữ số
             total = Math.round(total * 100.0) / 100.0;
 
             lblTotalPossibleScore.setText("TỔNG ĐIỂM: " + total);
 
-            // Cảnh báo màu sắc
             if (total > 10.001) {
-                lblTotalPossibleScore.setForeground(Color.RED); // Lố điểm
+                lblTotalPossibleScore.setForeground(Color.RED);
             } else if (Math.abs(total - 10.0) < 0.001) {
-                lblTotalPossibleScore.setForeground(new Color(0, 150, 0)); // Vừa khít 10 (Màu xanh lá)
+                lblTotalPossibleScore.setForeground(new Color(0, 150, 0));
             } else {
-                lblTotalPossibleScore.setForeground(Color.BLUE); // Chưa đủ 10
+                lblTotalPossibleScore.setForeground(Color.BLUE);
             }
 
         } catch (Exception e) {
@@ -175,7 +171,7 @@ public class AnswerKeyDialog extends JDialog {
                 tableModel.addRow(new Object[]{i + p1 + p2, "III", ans});
             }
 
-            calculateTotalPossibleScore(); // Tính lại điểm sau khi update table
+            calculateTotalPossibleScore();
 
         } catch (NumberFormatException e) {
             JOptionPane.showMessageDialog(this, "Lỗi: Vui lòng nhập số câu hợp lệ!");
@@ -229,7 +225,6 @@ public class AnswerKeyDialog extends JDialog {
     public void loadConfig(ExamConfig config) {
         if (config == null) return;
 
-        // 1. Cập nhật lại các ô nhập số lượng và điểm
         txtP1.setText(String.valueOf(config.getNumPart1()));
         txtP2.setText(String.valueOf(config.getNumPart2()));
         txtP3.setText(String.valueOf(config.getNumPart3()));
@@ -241,20 +236,17 @@ public class AnswerKeyDialog extends JDialog {
         txtScoreP2_3.setText(String.valueOf(config.getScoreP2_3()));
         txtScoreP2_4.setText(String.valueOf(config.getScoreP2_4()));
 
-        // 2. KHÔNG GỌI updateTable() NỮA MÀ ĐỌC THẲNG TỪ CONFIG ĐỂ ĐỔ VÀO BẢNG
         int p1 = config.getNumPart1();
         int p2 = config.getNumPart2();
         int p3 = config.getNumPart3();
 
-        tableModel.setRowCount(0); // Xóa sạch bảng
+        tableModel.setRowCount(0);
 
-        // Đổ đáp án Phần 1 từ config
         for (int i = 1; i <= p1; i++) {
             String ans = config.getAnswer("P1_Câu_" + i);
             tableModel.addRow(new Object[]{i, "I", ans != null ? ans : ""});
         }
 
-        // Đổ đáp án Phần 2 (Gộp a, b, c, d) từ config
         for (int i = 1; i <= p2; i++) {
             String a = config.getAnswer("P2_Câu_" + i + "_a");
             String b = config.getAnswer("P2_Câu_" + i + "_b");
@@ -264,34 +256,89 @@ public class AnswerKeyDialog extends JDialog {
             tableModel.addRow(new Object[]{i + p1, "II", combined});
         }
 
-        // Đổ đáp án Phần 3 từ config
         for (int i = 1; i <= p3; i++) {
             String ans = config.getAnswer("P3_Câu_" + i);
             tableModel.addRow(new Object[]{i + p1 + p2, "III", ans != null ? ans : ""});
         }
 
-        // 3. Cập nhật lại con số Tổng điểm màu xanh lá ở góc phải
         calculateTotalPossibleScore();
     }
 
+    // ==========================================================
+    // ĐÃ FIX: DÙNG TRỰC TIẾP XSSFWorkbook VÀ toString() ĐỂ CHỐNG CRASH
+    // ==========================================================
+    private void processExcelFile(File file) {
+        try (FileInputStream fis = new FileInputStream(file);
+             XSSFWorkbook workbook = new XSSFWorkbook(fis)) { // Dùng XSSFWorkbook để tránh lỗi ClassLoader
+
+            Sheet sheet = workbook.getSheetAt(0);
+            tableModel.setRowCount(0);
+
+            // Duyệt từ dòng 1 (bỏ qua dòng tiêu đề)
+            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+                Row row = sheet.getRow(i);
+                if (row == null) continue;
+
+                Cell qCell = row.getCell(0);
+                Cell phanCell = row.getCell(1);
+                Cell aCell = row.getCell(2);
+
+                if (qCell != null && phanCell != null && aCell != null) {
+                    // Dùng toString() để tránh crash nếu định dạng ô trong Excel là Số thay vì Text
+                    String qStr = qCell.toString().replace(".0", "").trim();
+                    String phan = phanCell.toString().trim().toUpperCase();
+                    String ans = aCell.toString().trim().toUpperCase();
+
+                    if (!qStr.isEmpty() && !phan.isEmpty() && !ans.isEmpty()) {
+                        try {
+                            int stt = (int) Double.parseDouble(qStr);
+                            tableModel.addRow(new Object[]{stt, phan, ans});
+                        } catch (NumberFormatException ignored) {}
+                    }
+                }
+            }
+            calculateTotalPossibleScore();
+            JOptionPane.showMessageDialog(this, "Đã tự động điền đáp án từ file " + file.getName() + "!");
+        } catch (Exception e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Lỗi khi đọc file Excel: " + e.getMessage(), "Lỗi", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
     private void importFromExcel() {
-        DataFormatter formatter = new DataFormatter();
         JFileChooser fileChooser = new JFileChooser();
         if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            try (FileInputStream fis = new FileInputStream(fileChooser.getSelectedFile());
-                 Workbook workbook = WorkbookFactory.create(fis)) {
-                Sheet sheet = workbook.getSheetAt(0);
-                tableModel.setRowCount(0);
-                for (Row row : sheet) {
-                    if (row.getRowNum() == 0 || row.getCell(1) == null) continue;
-                    String phan = row.getCell(1).getStringCellValue().trim().toUpperCase();
-                    String ans = formatter.formatCellValue(row.getCell(2)).trim().toUpperCase();
-                    tableModel.addRow(new Object[]{(int)row.getCell(0).getNumericCellValue(), phan, ans});
-                }
-                calculateTotalPossibleScore();
-                JOptionPane.showMessageDialog(this, "Import xong!");
-            } catch (Exception e) { JOptionPane.showMessageDialog(this, "Lỗi: " + e.getMessage()); }
+            processExcelFile(fileChooser.getSelectedFile());
         }
+    }
+
+    private void enableDragAndDrop() {
+        this.setDropTarget(new DropTarget() {
+            public synchronized void drop(DropTargetDropEvent evt) {
+                try {
+                    evt.acceptDrop(DnDConstants.ACTION_COPY);
+                    List<File> droppedFiles = (List<File>) evt.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
+
+                    if (!droppedFiles.isEmpty()) {
+                        File file = droppedFiles.get(0);
+                        String low = file.getName().toLowerCase();
+
+                        if (low.endsWith(".xlsx") || low.endsWith(".xls")) {
+                            processExcelFile(file);
+                        } else {
+                            JOptionPane.showMessageDialog(AnswerKeyDialog.this,
+                                    "Vui lòng kéo thả đúng file Excel (.xlsx hoặc .xls)!",
+                                    "Sai định dạng", JOptionPane.ERROR_MESSAGE);
+                        }
+                    }
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    JOptionPane.showMessageDialog(AnswerKeyDialog.this,
+                            "Lỗi khi xử lý file: " + ex.getMessage(),
+                            "Lỗi", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
     }
 
     public JButton getBtnSave() { return btnSave; }

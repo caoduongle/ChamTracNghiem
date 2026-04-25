@@ -43,8 +43,6 @@ public class MainView extends JFrame {
         btnExportScores = new JButton("📊 Xuất Bảng Điểm");
         btnExportConfig = new JButton("📝 Xuất Đáp Án");
 
-        btnDeletePermanent = new JButton("☢ Xóa vĩnh viễn");
-        btnDeletePermanent.setForeground(Color.RED); // Chữ màu đỏ cho ngầu và cảnh báo
         btnSelectAll = new JButton("☑ Chọn tất cả");
         panelControl.add(btnSelectAll);
         panelControl.add(btnDeletePermanent);

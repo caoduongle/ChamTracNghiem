@@ -7,7 +7,7 @@ import javax.swing.table.DefaultTableModel;
 import java.util.ArrayList;
 import java.util.HashMap;
 
-// CÁC THƯ VIỆN KÉO THẢ MỚI ĐƯỢC THÊM VÀO
+// THƯ VIỆN KÉO THẢ
 import java.awt.dnd.DropTarget;
 import java.awt.dnd.DropTargetDropEvent;
 import java.awt.dnd.DnDConstants;
@@ -129,6 +129,11 @@ public class MainController {
     }
 
     private void initController() {
+        // --- ẨN NÚT CHỌN THƯ MỤC CŨ ĐI VÌ ĐÃ CÓ KÉO THẢ ---
+        if (view.getBtnSelectFolder() != null) {
+            view.getBtnSelectFolder().setVisible(false);
+        }
+
         view.getBtnBackToMenu().addActionListener(e -> {
             int confirm = JOptionPane.showConfirmDialog(view, "Bạn muốn lưu và trở về màn hình Chọn Đề?", "Xác nhận", JOptionPane.YES_NO_OPTION);
             if (confirm == JOptionPane.YES_OPTION) {
@@ -141,15 +146,11 @@ public class MainController {
             }
         });
 
-        view.getBtnSelectFolder().addActionListener(e -> {
-            JOptionPane.showMessageDialog(view, "Hãy CLICK ĐÚP CHUỘT vào tên học sinh trong bảng để kéo thả ảnh! \n\nMẸO: Bạn cũng có thể bôi đen nhiều ảnh rồi kéo thẳng vào bảng này để tự động gán theo STT.", "Hướng dẫn Kéo Thả", JOptionPane.INFORMATION_MESSAGE);
-        });
-
         view.getBtnDeleteResult().addActionListener(e -> deleteSelectedReport());
         view.getCbxSortResults().addActionListener(e -> refreshTable());
 
         // ==========================================================
-        // 1. SỰ KIỆN KÉO THẢ HÀNG LOẠT TRỰC TIẾP LÊN BẢNG (MASS DROP)
+        // SỰ KIỆN KÉO THẢ HÀNG LOẠT TRỰC TIẾP LÊN BẢNG
         // ==========================================================
         view.getTblResults().setDropTarget(new DropTarget() {
             public synchronized void drop(DropTargetDropEvent evt) {
@@ -158,7 +159,6 @@ public class MainController {
                     List<File> droppedFiles = (List<File>) evt.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
                     if (droppedFiles.isEmpty()) return;
 
-                    // TRƯỜNG HỢP 1: Kéo thả duy nhất 1 file vào 1 hàng cụ thể
                     if (droppedFiles.size() == 1) {
                         Point p = evt.getLocation();
                         int row = view.getTblResults().rowAtPoint(p);
@@ -173,7 +173,6 @@ public class MainController {
                         }
                     }
 
-                    // TRƯỜNG HỢP 2: Kéo thả nhiều file -> Tự động dò STT trên tên file (VD: 1.jpg -> gán cho STT 1)
                     int autoCount = 0;
                     for (File file : droppedFiles) {
                         String low = file.getName().toLowerCase();
@@ -229,37 +228,89 @@ public class MainController {
         view.getBtnExportConfig().addActionListener(e -> saveExcel("DapAn_" + currentSession.getExamName() + ".xlsx", 2));
     }
 
+    // ==========================================================
+    // ĐÃ NÂNG CẤP: MENU TÙY CHỌN DOUBLE CLICK (CÓ NÚT XÓA BÀI)
+    // ==========================================================
     private void handleStudentDoubleClick(String stt, String name) {
         model.OMRModels.ExamReport report = reportDatabase.get(stt);
-        if (report != null) {
-            String[] options = {"🔍 Xem chi tiết", "📁 Gán lại ảnh khác", "Hủy"};
-            int choice = JOptionPane.showOptionDialog(view,
-                    "Học sinh " + name + " đã có điểm. Chọn thao tác:",
-                    "Tùy chọn", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
+        boolean hasPendingImage = assignedFiles.containsKey(stt);
 
-            if (choice == 0) showWrongAnswersDialog(stt);
+        if (report != null || hasPendingImage) {
+            String[] options = {"🔍 Xem chi tiết", "📁 Gán lại ảnh khác", "❌ Xóa bài làm này", "Hủy bỏ"};
+            int choice = JOptionPane.showOptionDialog(view,
+                    "Học sinh " + name + " đang có ảnh bài làm. Bạn muốn làm gì?",
+                    "Tùy chọn thao tác", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
+
+            if (choice == 0) {
+                if (report != null) showWrongAnswersDialog(stt);
+                else JOptionPane.showMessageDialog(view, "Bài thi này đang chờ để chấm, chưa có chi tiết để xem!");
+            }
             else if (choice == 1) openDragAndDropDialog(stt, name);
+            else if (choice == 2) removeStudentExam(stt, name); // GỌI HÀM XÓA BÀI
         } else {
             openDragAndDropDialog(stt, name);
         }
     }
 
     // ==========================================================
-    // 2. BẢNG GIAO DIỆN KÉO THẢ RIÊNG CHO TỪNG HỌC SINH
+    // HÀM MỚI: XÓA BÀI LÀM CỦA MỘT HỌC SINH
     // ==========================================================
+    private void removeStudentExam(String stt, String name) {
+        int confirm = JOptionPane.showConfirmDialog(view,
+                "Bạn có chắc muốn hủy kết quả và xóa ảnh bài làm của học sinh: " + name + "?",
+                "Xác nhận xóa", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+
+        if (confirm == JOptionPane.YES_OPTION) {
+            model.OMRModels.ExamReport report = reportDatabase.get(stt);
+
+            // 1. Xóa file ảnh vật lý trong ổ cứng (nếu có)
+            if (report != null && report.imagePath != null) {
+                try {
+                    java.nio.file.Files.deleteIfExists(new File(report.imagePath).toPath());
+                    java.nio.file.Files.deleteIfExists(new File(report.imagePath.replace(".jpg", "_processed.jpg")).toPath());
+                } catch (Exception ex) {}
+            }
+
+            // 2. Xóa khỏi danh sách chờ chấm & Database
+            reportDatabase.remove(stt);
+            assignedFiles.remove(stt);
+
+            // 3. Lưu lại vào file .dat
+            if (currentSession != null) {
+                currentSession.getReports().removeIf(r -> r.studentId.equals(stt));
+                service.DataManager.saveSession(currentSession, currentClassRoom.className);
+            }
+
+            // 4. Cập nhật lại giao diện
+            refreshTable();
+            view.setStatusMessage("Đã xóa sạch bài làm của học sinh " + name);
+        }
+    }
+
+    // Gắn chung logic nút "Xóa bài chọn" trên thanh công cụ vào hàm Xóa này
+    private void deleteSelectedReport() {
+        int row = view.getTblResults().getSelectedRow();
+        if (row == -1) {
+            JOptionPane.showMessageDialog(view, "Vui lòng chọn một học sinh trên bảng để xóa bài!");
+            return;
+        }
+        String stt = currentRowStts.get(row);
+        String name = (String) view.getTblResults().getValueAt(row, 1);
+        removeStudentExam(stt, name);
+    }
+
     private void openDragAndDropDialog(String stt, String name) {
         JDialog dropDialog = new JDialog(view, "Gán ảnh bài làm - STT " + stt + ": " + name, true);
         dropDialog.setSize(500, 350);
         dropDialog.setLayout(new BorderLayout(10, 10));
 
         JPanel pnlDrop = new JPanel(new BorderLayout());
-        pnlDrop.setBackground(new Color(240, 248, 255)); // Màu nền xanh nhạt chuyên nghiệp
-        pnlDrop.setBorder(BorderFactory.createDashedBorder(Color.GRAY, 3, 5, 2, true)); // Viền đứt nét
+        pnlDrop.setBackground(new Color(240, 248, 255));
+        pnlDrop.setBorder(BorderFactory.createDashedBorder(Color.GRAY, 3, 5, 2, true));
 
         JLabel lblGuide = new JLabel("<html><center><font size='5' color='#0066cc'><b>KÉO THẢ ẢNH VÀO ĐÂY</b></font><br><br>hoặc <u>Click</u> để mở thư mục</center></html>", SwingConstants.CENTER);
         pnlDrop.add(lblGuide, BorderLayout.CENTER);
 
-        // NẾU CLICK -> Mở FileChooser chọn truyền thống
         pnlDrop.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -273,7 +324,6 @@ public class MainController {
             }
         });
 
-        // NẾU KÉO THẢ VÀO KHU VỰC NÀY -> Nhận file
         pnlDrop.setDropTarget(new DropTarget() {
             public synchronized void drop(DropTargetDropEvent evt) {
                 try {
@@ -322,32 +372,6 @@ public class MainController {
                 ex.printStackTrace();
                 JOptionPane.showMessageDialog(view, "Lỗi khi xuất file: " + ex.getMessage());
             }
-        }
-    }
-
-    private void deleteSelectedReport() {
-        int row = view.getTblResults().getSelectedRow();
-        if (row == -1) return;
-
-        String stt = currentRowStts.get(row);
-        model.OMRModels.ExamReport report = reportDatabase.get(stt);
-
-        if (JOptionPane.showConfirmDialog(view, "Xóa kết quả chấm của học sinh này?", "Xác nhận", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
-            if (report != null && report.imagePath != null) {
-                try {
-                    java.nio.file.Files.deleteIfExists(new File(report.imagePath).toPath());
-                    java.nio.file.Files.deleteIfExists(new File(report.imagePath.replace(".jpg", "_processed.jpg")).toPath());
-                } catch (Exception ex) {}
-            }
-
-            reportDatabase.remove(stt);
-            assignedFiles.remove(stt);
-
-            if (currentSession != null) {
-                currentSession.getReports().removeIf(r -> r.studentId.equals(stt));
-                service.DataManager.saveSession(currentSession, currentClassRoom.className);
-            }
-            refreshTable();
         }
     }
 
