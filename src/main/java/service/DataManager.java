@@ -11,13 +11,12 @@ public class DataManager {
     private static final String TRASH_DIR = "data/trash/";
     private static final long THIRTY_DAYS_MS = 30L * 24 * 60 * 60 * 1000;
 
-    // --- LỚP HỖ TRỢ: Đã thêm đủ 5 trường để phân biệt file trùng tên ---
     public static class TrashedItem {
         public String originalName;
         public String trashFileName;
         public int daysLeft;
-        public long creationTime; // Ngày tạo đề
-        public long deletionTime; // Ngày xóa đề
+        public long creationTime;
+        public long deletionTime;
 
         public TrashedItem(String originalName, String trashFileName, int daysLeft, long creationTime, long deletionTime) {
             this.originalName = originalName;
@@ -73,7 +72,6 @@ public class DataManager {
         } catch (Exception e) { e.printStackTrace(); }
     }
 
-    // CHỈ GIỮ LẠI 1 HÀM NÀY (Đã sửa lỗi Ambiguous)
     public static List<TrashedItem> listTrashedExams() {
         List<TrashedItem> trashed = new ArrayList<>();
         File dir = new File(TRASH_DIR);
@@ -87,8 +85,6 @@ public class DataManager {
                         long elapsed = now - deleteTime;
                         int daysLeft = (int) ((THIRTY_DAYS_MS - elapsed) / (24 * 60 * 60 * 1000));
                         if (daysLeft < 0) daysLeft = 0;
-
-                        // creationTime lấy từ ngày sửa đổi cuối của file, deletionTime lấy từ tên file
                         trashed.add(new TrashedItem(parts[0], f.getName(), daysLeft, f.lastModified(), deleteTime));
                     } catch (Exception e) { }
                 }
@@ -99,10 +95,39 @@ public class DataManager {
 
     public static void restoreFromTrash(String trashFileName) {
         File src = new File(TRASH_DIR + trashFileName);
-        if (src.exists()) {
-            String originalName = trashFileName.split(".dat_deleted_")[0];
-            File dest = new File(DATA_DIR + originalName + ".dat");
-            src.renameTo(dest);
+        if (!src.exists()) return;
+
+        String originalName = trashFileName.split(".dat_deleted_")[0];
+        String baseName = originalName;
+        File dest = new File(DATA_DIR + baseName + ".dat");
+
+        int count = 1;
+        while (dest.exists()) {
+            count++;
+            baseName = originalName + " (" + count + ")";
+            dest = new File(DATA_DIR + baseName + ".dat");
+        }
+
+        if (src.renameTo(dest)) {
+            ExamSession session = loadSession(baseName);
+            if (session != null) {
+                session.setExamName(baseName); // ĐÃ CÓ SETTER SAU KHI SỬA BƯỚC 1
+                saveSession(session);
+            }
+        }
+    }
+
+    public static void renameExam(String oldName, String newName) {
+        File src = new File(DATA_DIR + oldName + ".dat");
+        File dest = new File(DATA_DIR + newName + ".dat");
+        if (src.exists() && !dest.exists()) {
+            if (src.renameTo(dest)) {
+                ExamSession session = loadSession(newName);
+                if (session != null) {
+                    session.setExamName(newName); // ĐÃ CÓ SETTER SAU KHI SỬA BƯỚC 1
+                    saveSession(session);
+                }
+            }
         }
     }
 
@@ -144,5 +169,44 @@ public class DataManager {
             props.setProperty("showTutorial", String.valueOf(show));
             props.store(new FileOutputStream(f), "App Settings");
         } catch (Exception e) { }
+    }
+    // ==========================================
+    // ============ QUẢN LÝ LỚP HỌC =============
+    // ==========================================
+    private static final String CLASS_DIR = "data/classes/";
+
+    public static void saveClass(model.ClassRoom cr) {
+        try {
+            File dir = new File(CLASS_DIR); if (!dir.exists()) dir.mkdirs();
+            ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(CLASS_DIR + cr.className + ".dat"));
+            oos.writeObject(cr); oos.close();
+        } catch (Exception e) { e.printStackTrace(); }
+    }
+
+    public static model.ClassRoom loadClass(String className) {
+        try {
+            ObjectInputStream ois = new ObjectInputStream(new FileInputStream(CLASS_DIR + className + ".dat"));
+            model.ClassRoom cr = (model.ClassRoom) ois.readObject(); ois.close();
+            return cr;
+        } catch (Exception e) { return null; }
+    }
+
+    public static List<String> listClasses() {
+        List<String> list = new ArrayList<>();
+        File dir = new File(CLASS_DIR);
+        if (dir.exists()) {
+            for (File f : dir.listFiles()) {
+                if (f.isFile() && f.getName().endsWith(".dat")) list.add(f.getName().replace(".dat", ""));
+            }
+        }
+        return list;
+    }
+
+    public static void deleteClass(String className) {
+        try {
+            File trashDir = new File(CLASS_DIR + "trash/"); if (!trashDir.exists()) trashDir.mkdirs();
+            File src = new File(CLASS_DIR + className + ".dat");
+            if (src.exists()) src.renameTo(new File(CLASS_DIR + "trash/" + className + ".dat_deleted_" + System.currentTimeMillis()));
+        } catch(Exception e) {}
     }
 }

@@ -5,7 +5,6 @@ import javax.swing.*;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.table.DefaultTableModel;
-import javax.swing.table.TableRowSorter;
 import java.awt.*;
 import java.io.File;
 import java.text.SimpleDateFormat;
@@ -18,7 +17,7 @@ import java.util.List;
 public class StartupDialog extends JDialog {
     private JTable tblExams;
     private DefaultTableModel tableModel;
-    private JButton btnNew, btnOpen, btnDelete, btnTrash, btnTutorial;
+    private JButton btnNew, btnOpen, btnDelete, btnTrash, btnTutorial, btnRename;
     private String selectedExam = null;
     private boolean isNew = false;
 
@@ -36,10 +35,10 @@ public class StartupDialog extends JDialog {
 
     public StartupDialog(JFrame parent) {
         super(parent, "Quản lý đề thi - Team N7", true);
-        setSize(650, 650);
+        setSize(650, 700);
         setLayout(new BorderLayout(5, 5));
 
-        // 1. THANH TÌM KIẾM, LỌC & SẮP XẾP
+        // 1. THANH TÌM KIẾM
         JPanel pnlSearchContainer = new JPanel(new GridLayout(2, 1, 5, 5));
         pnlSearchContainer.setBorder(BorderFactory.createTitledBorder("Tìm kiếm, Lọc & Sắp xếp"));
 
@@ -75,7 +74,7 @@ public class StartupDialog extends JDialog {
         pnlSearchContainer.add(pnlRow2);
         add(pnlSearchContainer, BorderLayout.NORTH);
 
-        // 2. DANH SÁCH ĐỀ THI (SỬ DỤNG JTABLE THAY CHO JLIST)
+        // 2. DANH SÁCH ĐỀ THI
         String[] cols = {"Tên Đề Thi", "Ngày Tạo/Cập Nhật"};
         tableModel = new DefaultTableModel(cols, 0) {
             @Override
@@ -90,25 +89,23 @@ public class StartupDialog extends JDialog {
         pnlList.add(new JScrollPane(tblExams), BorderLayout.CENTER);
         add(pnlList, BorderLayout.CENTER);
 
-        // 3. VÙNG NÚT CHỨC NĂNG
+        // 3. VÙNG NÚT CHỨC NĂNG (Đã sửa lại GridLayout thành 3x2)
         JPanel pnlBottomControls = new JPanel(new BorderLayout(0, 5));
         pnlBottomControls.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
-        JPanel pnlBtns = new JPanel(new GridLayout(2, 2, 5, 5));
+        JPanel pnlBtns = new JPanel(new GridLayout(3, 2, 5, 5));
         btnNew = new JButton("Chấm đề mới");
         btnOpen = new JButton("Mở đề cũ");
+        btnRename = new JButton("✏ Đổi tên đề");
         btnDelete = new JButton("❌ Xóa đề");
         btnTrash = new JButton("🗑 Thùng rác");
+        btnTutorial = new JButton("Hướng dẫn");
 
         pnlBtns.add(btnNew); pnlBtns.add(btnOpen);
-        pnlBtns.add(btnDelete); pnlBtns.add(btnTrash);
-
-        btnTutorial = new JButton("Hướng dẫn sử dụng");
-        btnTutorial.setFont(new Font("Arial", Font.BOLD, 14));
-        btnTutorial.setForeground(new Color(0, 102, 204));
+        pnlBtns.add(btnRename); pnlBtns.add(btnDelete);
+        pnlBtns.add(btnTrash); pnlBtns.add(btnTutorial);
 
         pnlBottomControls.add(pnlBtns, BorderLayout.CENTER);
-        pnlBottomControls.add(btnTutorial, BorderLayout.SOUTH);
         add(pnlBottomControls, BorderLayout.SOUTH);
 
         // --- SỰ KIỆN ---
@@ -139,7 +136,22 @@ public class StartupDialog extends JDialog {
                 selectedExam = tblExams.getValueAt(row, 0).toString();
                 isNew = false; dispose();
             } else {
-                JOptionPane.showMessageDialog(this, "Vui lòng chọn một đề thi trong bảng!", "Chưa chọn", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Vui lòng chọn một đề thi!", "Chưa chọn", JOptionPane.WARNING_MESSAGE);
+            }
+        });
+
+        // --- SỰ KIỆN ĐỔI TÊN ĐỀ THI ---
+        btnRename.addActionListener(e -> {
+            int row = tblExams.getSelectedRow();
+            if (row != -1) {
+                String oldName = tblExams.getValueAt(row, 0).toString();
+                String newName = JOptionPane.showInputDialog(this, "Nhập tên mới cho đề '" + oldName + "':", oldName);
+                if (newName != null && !newName.trim().isEmpty() && !newName.equals(oldName)) {
+                    DataManager.renameExam(oldName, newName.trim());
+                    refreshExamList();
+                }
+            } else {
+                JOptionPane.showMessageDialog(this, "Vui lòng chọn đề thi cần đổi tên!");
             }
         });
 
@@ -160,9 +172,6 @@ public class StartupDialog extends JDialog {
         btnTutorial.addActionListener(e -> new TutorialDialog(parent).setVisible(true));
 
         setLocationRelativeTo(parent);
-        if (DataManager.shouldShowTutorial()) {
-            SwingUtilities.invokeLater(() -> new TutorialDialog(parent).setVisible(true));
-        }
     }
 
     private void refreshExamList() {

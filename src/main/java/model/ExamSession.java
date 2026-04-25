@@ -22,4 +22,8 @@ public class ExamSession implements Serializable {
     public void setConfig(ExamConfig config) { this.config = config; }
     public List<OMRModels.ExamReport> getReports() { return reports; }
     public void addReport(OMRModels.ExamReport report) { this.reports.add(report); }
+    // Thêm hàm này vào file ExamSession.java
+    public void setExamName(String examName) {
+        this.examName = examName;
+    }
 }

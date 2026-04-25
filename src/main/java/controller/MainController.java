@@ -8,9 +8,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 
 import model.ExamSession;
+import model.ClassRoom;
 import view.MainView;
 import view.AnswerKeyDialog;
 import view.StartupDialog;
+import view.ClassManagementDialog;
 import model.ExamConfig;
 import service.OMRService;
 import service.DataManager;
@@ -19,16 +21,18 @@ import javax.swing.*;
 import java.io.File;
 import java.util.List;
 import java.util.Map;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 
 public class MainController {
     private MainView view;
-    private File selectedFolder;
     private ExamConfig currentConfig;
     private ExamSession currentSession;
+    private ClassRoom currentClassRoom;
+
     private Map<String, model.OMRModels.ExamReport> reportDatabase = new HashMap<>();
-    private List<File> selectedFiles = new ArrayList<>();
+
+    // THÊM: Bản đồ lưu trữ ảnh được gán thủ công (Key: STT học sinh, Value: File ảnh)
+    private Map<String, File> assignedFiles = new HashMap<>();
+    private List<String> currentRowStts = new ArrayList<>(); // Theo dõi thứ tự STT trên bảng
 
     public MainController(MainView view) {
         this.view = view;
@@ -37,7 +41,20 @@ public class MainController {
     }
 
     public void initApp() {
-        showStartupMenu(true);
+        showClassMenu(true);
+    }
+
+    private void showClassMenu(boolean isFirstRun) {
+        view.setVisible(false);
+        ClassManagementDialog classDialog = new ClassManagementDialog(view);
+        classDialog.setVisible(true);
+
+        if (classDialog.getSelectedClass() != null) {
+            this.currentClassRoom = classDialog.getSelectedClass();
+            showStartupMenu(isFirstRun);
+        } else {
+            if (isFirstRun) System.exit(0);
+        }
     }
 
     private void showStartupMenu(boolean isFirstRun) {
@@ -50,77 +67,95 @@ public class MainController {
                 this.currentConfig = null;
             } else {
                 currentSession = DataManager.loadSession(startup.getSelectedExam());
-                if (currentSession == null) {
-                    JOptionPane.showMessageDialog(null, "Lỗi: Không thể đọc file dữ liệu. File có thể đã bị hỏng!", "Lỗi Dữ Liệu", JOptionPane.ERROR_MESSAGE);
-                    if (isFirstRun) System.exit(0);
-                    else { showStartupMenu(false); return; }
-                }
-                this.currentConfig = currentSession.getConfig();
-                loadSessionToUI();
+                if (currentSession != null) this.currentConfig = currentSession.getConfig();
             }
-            view.setTitle("Phần mềm Chấm Trắc Nghiệm - Team N7 | Đề: " + currentSession.getExamName());
+            view.setTitle("Phần mềm Chấm Thi | Lớp: " + currentClassRoom.className + " | Đề: " + currentSession.getExamName());
             view.setVisible(true);
+            loadSessionToUI();
         } else {
-            if (isFirstRun) {
-                System.exit(0);
-            }
+            showClassMenu(isFirstRun);
         }
     }
 
+    private void setupTableColumns() {
+        DefaultTableModel model = (DefaultTableModel) view.getTblResults().getModel();
+        // Bảng bây giờ có thêm cột "File Ảnh Bài Làm" để giáo viên dễ theo dõi
+        model.setColumnIdentifiers(new Object[]{"STT", "Họ Tên Học Sinh", "File Ảnh Bài Làm", "Tổng điểm", "Trạng thái"});
+    }
+
+    // =========================================================
+    // LOAD DỮ LIỆU: Luôn hiển thị TẤT CẢ học sinh trong lớp
+    // =========================================================
     private void loadSessionToUI() {
+        if (currentSession != null && currentSession.getReports() != null) {
+            for (model.OMRModels.ExamReport report : currentSession.getReports()) {
+                reportDatabase.put(report.studentId, report); // studentId lúc này đóng vai trò là STT
+            }
+        }
+        refreshTable();
+    }
+
+    private void refreshTable() {
+        if (currentSession == null || currentClassRoom == null) return;
+        setupTableColumns();
         DefaultTableModel model = (DefaultTableModel) view.getTblResults().getModel();
         model.setRowCount(0);
-        reportDatabase.clear();
+        currentRowStts.clear();
 
-        if (currentSession.getReports() == null || currentSession.getReports().isEmpty()) return;
+        // Duyệt qua TẤT CẢ học sinh của lớp thay vì chỉ duyệt những người đã có điểm
+        for (ClassRoom.Student student : currentClassRoom.students) {
+            String stt = String.valueOf(student.stt);
+            currentRowStts.add(stt);
 
-        int count = 1;
-        for (model.OMRModels.ExamReport report : currentSession.getReports()) {
-            reportDatabase.put(report.studentId, report);
-            Object[] rowData = {count++, report.studentId, report.examCode, report.totalScore, "Đã chấm (Lịch sử)"};
-            view.addResultRow(rowData);
+            model.OMRModels.ExamReport report = reportDatabase.get(stt);
+
+            // XÁC ĐỊNH FILE ẢNH ĐANG ĐƯỢC GÁN
+            String fileName = "--- Chưa có ảnh ---";
+            if (assignedFiles.containsKey(stt)) {
+                fileName = "⏳ " + assignedFiles.get(stt).getName() + " (Chờ chấm)";
+            } else if (report != null && report.originalImagePath != null) {
+                fileName = "✅ " + new File(report.originalImagePath).getName();
+            }
+
+            String score = report != null ? String.valueOf(report.totalScore) : "";
+            String status = report != null && report.statusMessage != null ? report.statusMessage : "Chưa chấm";
+
+            view.addResultRow(new Object[]{stt, student.name, fileName, score, status});
         }
-        view.setStatusMessage("Đã tải lịch sử: " + currentSession.getReports().size() + " bài thi.");
     }
 
     private void initController() {
         view.getBtnBackToMenu().addActionListener(e -> {
-            int confirm = JOptionPane.showConfirmDialog(view,
-                    "Bạn có chắc chắn muốn trở về Menu chính không?",
-                    "Xác nhận", JOptionPane.YES_NO_OPTION);
-
+            int confirm = JOptionPane.showConfirmDialog(view, "Bạn muốn trở về màn hình Chọn Đề/Lớp?", "Xác nhận", JOptionPane.YES_NO_OPTION);
             if (confirm == JOptionPane.YES_OPTION) {
                 view.clearView();
                 this.currentSession = null;
-                this.currentConfig = null;
-                this.selectedFolder = null;
                 this.reportDatabase.clear();
-                this.selectedFiles.clear();
-                view.setVisible(false);
+                this.assignedFiles.clear();
                 showStartupMenu(false);
             }
         });
 
-        view.getBtnSelectFolder().addActionListener(e -> selectFolder());
+        // Thay vì mở folder chọn hàng loạt như cũ, báo cho user biết cách làm mới
+        view.getBtnSelectFolder().addActionListener(e -> {
+            JOptionPane.showMessageDialog(view, "TÍNH NĂNG MỚI: \nHãy CLICK ĐÚP CHUỘT vào tên học sinh trong bảng để chọn ảnh bài làm cho học sinh đó!", "Hướng dẫn", JOptionPane.INFORMATION_MESSAGE);
+        });
 
-        view.getBtnSelectAll().addActionListener(e -> view.getTblResults().selectAll());
-        // SỰ KIỆN XÓA BÀI (Chỉ xóa file copy trong data)
         view.getBtnDeleteResult().addActionListener(e -> deleteSelectedReport());
-
-        // SỰ KIỆN XÓA VĨNH VIỄN (Xóa cả file gốc A.png)
-        view.getBtnDeletePermanent().addActionListener(e -> deletePermanentSelectedReport());
-
         view.getCbxSortResults().addActionListener(e -> refreshTable());
 
+        // =========================================================
+        // SỰ KIỆN NHẤN ĐÚP CHUỘT VÀO HỌC SINH
+        // =========================================================
         view.getTblResults().addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
                 if (e.getClickCount() == 2) {
-                    JTable target = (JTable) e.getSource();
-                    int row = target.getSelectedRow();
+                    int row = ((JTable) e.getSource()).getSelectedRow();
                     if (row != -1) {
-                        String sbd = target.getValueAt(row, 1).toString();
-                        showWrongAnswersDialog(sbd);
+                        String stt = currentRowStts.get(row);
+                        String name = (String) view.getTblResults().getValueAt(row, 1);
+                        handleStudentDoubleClick(stt, name);
                     }
                 }
             }
@@ -128,9 +163,7 @@ public class MainController {
 
         view.getBtnSetAnswerKey().addActionListener(e -> {
             AnswerKeyDialog dialog = new AnswerKeyDialog(view);
-            if (this.currentConfig != null) {
-                dialog.loadConfig(this.currentConfig);
-            }
+            if (this.currentConfig != null) dialog.loadConfig(this.currentConfig);
             dialog.getBtnSave().addActionListener(event -> {
                 this.currentConfig = dialog.getExamConfig();
                 if (currentSession != null) {
@@ -144,22 +177,42 @@ public class MainController {
         });
 
         view.getBtnStartGrading().addActionListener(e -> startGradingProcess());
+        view.getBtnExportScores().addActionListener(e -> saveExcel("BangDiem_" + currentSession.getExamName() + ".xlsx", 1));
+        view.getBtnExportConfig().addActionListener(e -> saveExcel("DapAn_" + currentSession.getExamName() + ".xlsx", 2));
+    }
 
-        view.getBtnExportScores().addActionListener(e -> {
-            if (currentSession == null || currentSession.getReports().isEmpty()) {
-                JOptionPane.showMessageDialog(view, "Chưa có dữ liệu để xuất!");
-                return;
-            }
-            saveExcel("BangDiem_" + currentSession.getExamName() + ".xlsx", 1);
-        });
+    // =========================================================
+    // LOGIC XỬ LÝ KHI CLICK ĐÚP VÀO HỌC SINH
+    // =========================================================
+    private void handleStudentDoubleClick(String stt, String name) {
+        model.OMRModels.ExamReport report = reportDatabase.get(stt);
 
-        view.getBtnExportConfig().addActionListener(e -> {
-            if (currentConfig == null) {
-                JOptionPane.showMessageDialog(view, "Vui lòng lưu cấu hình đáp án trước!");
-                return;
-            }
-            saveExcel("DapAn_" + currentSession.getExamName() + ".xlsx", 2);
-        });
+        if (report != null) {
+            // Nếu học sinh ĐÃ CÓ ĐIỂM -> Hỏi giáo viên muốn làm gì
+            String[] options = {"🔍 Xem chi tiết bài đã chấm", "📁 Chọn ảnh khác để chấm lại", "Hủy"};
+            int choice = JOptionPane.showOptionDialog(view,
+                    "Học sinh " + name + " đã có kết quả. Bạn muốn làm gì?",
+                    "Tùy chọn", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
+
+            if (choice == 0) showWrongAnswersDialog(stt);
+            else if (choice == 1) selectImageForStudent(stt, name);
+        } else {
+            // Nếu học sinh CHƯA CÓ ĐIỂM -> Mở ngay bảng chọn file ảnh
+            selectImageForStudent(stt, name);
+        }
+    }
+
+    // Hộp thoại chọn ảnh riêng cho 1 học sinh
+    private void selectImageForStudent(String stt, String name) {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Chọn ảnh bài làm cho học sinh: " + name);
+
+        if (chooser.showOpenDialog(view) == JFileChooser.APPROVE_OPTION) {
+            File file = chooser.getSelectedFile();
+            // Lưu file vào danh sách chờ chấm của học sinh này
+            assignedFiles.put(stt, file);
+            refreshTable(); // Bảng sẽ cập nhật hiện biểu tượng ⏳ Chờ chấm
+        }
     }
 
     private void saveExcel(String defaultName, int type) {
@@ -169,171 +222,48 @@ public class MainController {
             try {
                 String path = fileChooser.getSelectedFile().getAbsolutePath();
                 if (!path.endsWith(".xlsx")) path += ".xlsx";
-
-                if (type == 1) {
-                    service.ExcelService.exportScoreTable(currentSession.getReports(), path);
-                } else {
-                    service.ExcelService.exportAnswerKey(currentConfig, path);
-                }
+                if (type == 1) service.ExcelService.exportScoreTable(currentSession.getReports(), path);
+                else service.ExcelService.exportAnswerKey(currentConfig, path);
                 JOptionPane.showMessageDialog(view, "Xuất file thành công!");
-            } catch (Exception ex) {
-                ex.printStackTrace();
-                JOptionPane.showMessageDialog(view, "Lỗi khi xuất file: " + ex.getMessage());
-            }
+            } catch (Exception ex) { ex.printStackTrace(); }
         }
     }
 
-    private void selectFolder() {
-        JFileChooser fileChooser = new JFileChooser();
-        fileChooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
-        fileChooser.setMultiSelectionEnabled(true);
-
-        if (fileChooser.showOpenDialog(view) == JFileChooser.APPROVE_OPTION) {
-            selectedFiles.clear();
-            File[] selected = fileChooser.getSelectedFiles();
-
-            for (File f : selected) {
-                if (f.isDirectory()) {
-                    File[] imgs = f.listFiles((dir, name) -> {
-                        String low = name.toLowerCase();
-                        return (low.endsWith(".jpg") || low.endsWith(".png")) && !low.contains("_processed");
-                    });
-                    if (imgs != null) {
-                        for (File img : imgs) selectedFiles.add(img);
-                    }
-                } else {
-                    String low = f.getName().toLowerCase();
-                    if (low.endsWith(".jpg") || low.endsWith(".png")) {
-                        selectedFiles.add(f);
-                    }
-                }
-            }
-            view.setStatusMessage("Đã chọn " + selectedFiles.size() + " file để chấm.");
-        }
-    }
-
-
-
-    // =======================================================
-    // CẬP NHẬT: XÓA THƯỜNG NHIỀU BÀI CÙNG LÚC
-    // =======================================================
     private void deleteSelectedReport() {
-        int[] selectedRows = view.getTblResults().getSelectedRows();
-        if (selectedRows.length == 0) {
-            JOptionPane.showMessageDialog(view, "Vui lòng chọn ít nhất một hàng để xóa! (Giữ Ctrl/Shift để chọn nhiều)");
-            return;
-        }
+        int row = view.getTblResults().getSelectedRow();
+        if (row == -1) return;
 
-        if (JOptionPane.showConfirmDialog(view, "Xóa " + selectedRows.length + " bài đã chọn?", "Xác nhận", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+        String stt = currentRowStts.get(row);
+        model.OMRModels.ExamReport report = reportDatabase.get(stt);
 
-            // BƯỚC QUAN TRỌNG: Lấy danh sách SBD trước khi xóa
-            // (Nếu xóa trực tiếp theo index, bảng sẽ bị co lại làm sai index các hàng tiếp theo)
-            List<String> sbdsToDelete = new ArrayList<>();
-            for (int row : selectedRows) {
-                sbdsToDelete.add(view.getTblResults().getValueAt(row, 1).toString());
+        if (JOptionPane.showConfirmDialog(view, "Xóa kết quả chấm của học sinh này?", "Xác nhận", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+            if (report != null && report.imagePath != null) {
+                try {
+                    java.nio.file.Files.deleteIfExists(new File(report.imagePath).toPath());
+                    java.nio.file.Files.deleteIfExists(new File(report.imagePath.replace(".jpg", "_processed.jpg")).toPath());
+                } catch (Exception ex) {}
             }
 
-            for (String sbd : sbdsToDelete) {
-                model.OMRModels.ExamReport report = reportDatabase.get(sbd);
-                if (report != null && report.imagePath != null) {
-                    try {
-                        Files.deleteIfExists(new File(report.imagePath).toPath());
-                        Files.deleteIfExists(new File(report.imagePath.replace(".jpg", "_processed.jpg")).toPath());
-                    } catch (Exception ex) {
-                        System.err.println("Lỗi khi xóa file: " + ex.getMessage());
-                    }
-                }
-                reportDatabase.remove(sbd);
-                if (currentSession != null) {
-                    currentSession.getReports().removeIf(r -> r.studentId.equals(sbd));
-                }
-            }
+            reportDatabase.remove(stt);
+            assignedFiles.remove(stt); // Xóa luôn file đang gán nếu có
 
-            if (currentSession != null) service.DataManager.saveSession(currentSession);
+            if (currentSession != null) {
+                currentSession.getReports().removeIf(r -> r.studentId.equals(stt));
+                service.DataManager.saveSession(currentSession);
+            }
             refreshTable();
-            view.setStatusMessage("Đã xóa " + sbdsToDelete.size() + " bài thi.");
         }
     }
 
-    // =======================================================
-    // CẬP NHẬT: XÓA VĨNH VIỄN NHIỀU BÀI CÙNG LÚC
-    // =======================================================
-    private void deletePermanentSelectedReport() {
-        int[] selectedRows = view.getTblResults().getSelectedRows();
-        if (selectedRows.length == 0) {
-            JOptionPane.showMessageDialog(view, "Vui lòng chọn ít nhất một hàng để xóa vĩnh viễn!");
-            return;
-        }
-
-        int confirm = JOptionPane.showConfirmDialog(view,
-                "⚠️ NGUY HIỂM: Bạn đang chuẩn bị xóa VĨNH VIỄN " + selectedRows.length + " bài làm.\n\n" +
-                        "Thao tác này sẽ xóa sạch dữ liệu trên phần mềm VÀ XÓA BỎ LUÔN FILE ẢNH GỐC ở ngoài thư mục.\n" +
-                        "Bạn có chắc chắn không?", "Cảnh báo Xóa Hàng Loạt", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-
-        if (confirm == JOptionPane.YES_OPTION) {
-            List<String> sbdsToDelete = new ArrayList<>();
-            for (int row : selectedRows) {
-                sbdsToDelete.add(view.getTblResults().getValueAt(row, 1).toString());
-            }
-
-            for (String sbd : sbdsToDelete) {
-                model.OMRModels.ExamReport report = reportDatabase.get(sbd);
-                if (report != null) {
-                    try {
-                        if (report.originalImagePath != null) {
-                            Files.deleteIfExists(new File(report.originalImagePath).toPath());
-                            // Xóa khỏi danh sách file đang duyệt để tránh lỗi
-                            selectedFiles.removeIf(f -> f.getAbsolutePath().equals(report.originalImagePath));
-                        }
-                        if (report.imagePath != null) {
-                            Files.deleteIfExists(new File(report.imagePath).toPath());
-                            Files.deleteIfExists(new File(report.imagePath.replace(".jpg", "_processed.jpg")).toPath());
-                        }
-                    } catch (Exception ex) {}
-                }
-                reportDatabase.remove(sbd);
-                if (currentSession != null) {
-                    currentSession.getReports().removeIf(r -> r.studentId.equals(sbd));
-                }
-            }
-
-            if (currentSession != null) service.DataManager.saveSession(currentSession);
-            refreshTable();
-            view.setStatusMessage("Đã tiêu diệt vĩnh viễn " + sbdsToDelete.size() + " bài thi.");
-        }
-    }
-    private void refreshTable() {
-        if (currentSession == null) return;
-
-        List<model.OMRModels.ExamReport> reports = new ArrayList<>(currentSession.getReports());
-        int sortType = view.getCbxSortResults().getSelectedIndex();
-
-        if (sortType == 1) {
-            reports.sort((a, b) -> a.studentId.compareTo(b.studentId));
-        } else if (sortType == 2) {
-            reports.sort((a, b) -> Double.compare(b.totalScore, a.totalScore));
-        }
-
-        DefaultTableModel model = (DefaultTableModel) view.getTblResults().getModel();
-        model.setRowCount(0);
-        int count = 1;
-        for (model.OMRModels.ExamReport r : reports) {
-            Object[] rowData = {count++, r.studentId, r.examCode, r.totalScore, "Đã lưu"};
-            view.addResultRow(rowData);
-        }
-    }
-
-    private void showWrongAnswersDialog(String sbd) {
-        model.OMRModels.ExamReport report = reportDatabase.get(sbd);
+    private void showWrongAnswersDialog(String stt) {
+        model.OMRModels.ExamReport report = reportDatabase.get(stt);
         if (report == null) return;
 
-        JDialog dialog = new JDialog(view, "Đối chiếu chi tiết - SBD: " + sbd, true);
+        JDialog dialog = new JDialog(view, "Đối chiếu chi tiết", true);
         dialog.setSize(1200, 800);
         dialog.setLocationRelativeTo(view);
 
         JPanel pnlHeader = new JPanel(new BorderLayout());
-
-        // ĐÃ CẢI TIẾN: Hiển thị tên file gốc (A.png) thay vì SBD.jpg
         File imgFile = new File(report.originalImagePath != null ? report.originalImagePath : report.imagePath);
         JLabel lblFileName = new JLabel("  File gốc: " + imgFile.getName());
         lblFileName.setFont(new Font("SansSerif", Font.BOLD, 14));
@@ -401,21 +331,16 @@ public class MainController {
         dialog.setVisible(true);
     }
 
-    private int findRowIndex(String sbd, String maDe) {
-        DefaultTableModel model = (DefaultTableModel) view.getTblResults().getModel();
-        for (int i = 0; i < model.getRowCount(); i++) {
-            String tableSbd = model.getValueAt(i, 1).toString();
-            String tableMaDe = model.getValueAt(i, 2).toString();
-            if (tableSbd.equals(sbd) && tableMaDe.equals(maDe)) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
+    // =========================================================
+    // HÀM CHẤM BÀI DỰA TRÊN DANH SÁCH ẢNH ĐƯỢC GÁN
+    // =========================================================
     private void startGradingProcess() {
-        if (selectedFiles.isEmpty() || currentConfig == null) {
-            JOptionPane.showMessageDialog(view, "Vui lòng chọn ảnh và cài đặt đáp án trước!", "Thiếu thông tin", JOptionPane.WARNING_MESSAGE);
+        if (assignedFiles.isEmpty()) {
+            JOptionPane.showMessageDialog(view, "Chưa có ảnh nào được gán! Hãy click đúp vào tên học sinh để gán ảnh trước khi chấm.", "Thiếu thông tin", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (currentConfig == null) {
+            JOptionPane.showMessageDialog(view, "Vui lòng cài đặt đáp án trước khi chấm!", "Thiếu thông tin", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
@@ -426,80 +351,62 @@ public class MainController {
                 view.getBtnStartGrading().setEnabled(false);
                 view.getBtnSetAnswerKey().setEnabled(false);
 
-                for (File file : selectedFiles) {
+                // Duyệt qua tất cả các file đã được gán thủ công
+                for (Map.Entry<String, File> entry : assignedFiles.entrySet()) {
+                    String stt = entry.getKey(); // ID của học sinh là STT
+                    File file = entry.getValue();
+
                     try {
-                        publish(new Object[]{"STATUS", "Đang xử lý: " + file.getName()});
+                        publish(new Object[]{"STATUS", "Đang chấm cho STT " + stt + ": " + file.getName()});
 
                         Map<String, String> studentResults = OMRService.processExam(file.getAbsolutePath(), currentConfig);
 
                         if (studentResults != null) {
-                            String sbd = studentResults.getOrDefault("STUDENT_ID", "LỖI_SBD");
-                            String maDe = studentResults.getOrDefault("EXAM_CODE", "LỖI_MÃ");
+                            String fName = "Chưa có tên";
+                            for (model.ClassRoom.Student st : currentClassRoom.students) {
+                                if (String.valueOf(st.stt).equals(stt)) { fName = st.name; break; }
+                            }
 
                             model.OMRModels.ExamReport newReport = service.ScoringEngine.gradeExam(
-                                    sbd, maDe, studentResults, currentConfig
+                                    stt, "AUTO", studentResults, currentConfig // STT đóng vai trò là SBD
                             );
 
-                            // LƯU ĐƯỜNG DẪN FILE GỐC VÀO REPORT
                             newReport.originalImagePath = file.getAbsolutePath();
-
-                            double newScore = newReport.totalScore;
-                            model.OMRModels.ExamReport oldReport = reportDatabase.get(sbd);
-
-                            boolean isExisting = (oldReport != null && oldReport.examCode.equals(maDe));
-                            boolean scoreChanged = isExisting && (oldReport.totalScore != newScore);
-
-                            // Đã fix lỗi Logic: So sánh đường dẫn gốc cũ và mới thay vì so sánh tên SBD
-                            boolean fileChanged = isExisting && oldReport.originalImagePath != null && !oldReport.originalImagePath.equals(file.getAbsolutePath());
-
-                            if (isExisting && !scoreChanged && !fileChanged) {
-                                continue;
-                            }
+                            newReport.studentName = fName;
+                            newReport.studentSttFile = stt;
+                            newReport.studentClass = currentClassRoom.className;
+                            newReport.statusMessage = "Thành công";
 
                             try {
                                 File imageDir = new File("data/images/" + currentSession.getExamName());
                                 if (!imageDir.exists()) imageDir.mkdirs();
 
-                                File destFile = new File(imageDir, sbd + ".jpg");
+                                File destFile = new File(imageDir, stt + ".jpg");
                                 java.nio.file.Files.copy(file.toPath(), destFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                                 newReport.imagePath = destFile.getAbsolutePath();
 
                                 File originalProcessed = new File(file.getAbsolutePath().replace(".jpg", "_processed.jpg"));
                                 if (originalProcessed.exists()) {
-                                    File destProcessed = new File(imageDir, sbd + "_processed.jpg");
+                                    File destProcessed = new File(imageDir, stt + "_processed.jpg");
                                     java.nio.file.Files.copy(originalProcessed.toPath(), destProcessed.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                                     originalProcessed.delete();
                                 }
                             } catch (Exception ex) {
                                 newReport.imagePath = file.getAbsolutePath();
-                                System.err.println("Lỗi copy ảnh: " + ex.getMessage());
                             }
 
-                            reportDatabase.put(sbd, newReport);
-
+                            // Lưu vào database
+                            reportDatabase.put(stt, newReport);
                             if (currentSession != null) {
-                                currentSession.getReports().removeIf(r -> r.studentId.equals(sbd) && r.examCode.equals(maDe));
+                                currentSession.getReports().removeIf(r -> r.studentId.equals(stt));
                                 currentSession.addReport(newReport);
                                 service.DataManager.saveSession(currentSession);
                             }
 
-                            String previewPath = newReport.imagePath.replace(".jpg", "_processed.jpg");
-
-                            if (isExisting) {
-                                publish(new Object[]{"UPDATE", sbd, maDe, newScore, "Đã cập nhật", previewPath});
-                            } else {
-                                int nextStt = view.getTblResults().getRowCount() + 1;
-                                publish(new Object[]{"DATA", new Object[]{nextStt, sbd, maDe, newScore, "Thành công"}, previewPath});
-                            }
-                        } else {
-                            int nextStt = view.getTblResults().getRowCount() + 1;
-                            publish(new Object[]{"DATA", new Object[]{nextStt, "ERR", "ERR", 0.0, "Lỗi nhận diện"}, null});
+                            publish(new Object[]{"UPDATE", stt}); // Chỉ cần gửi STT để refresh bảng
                         }
                     } catch (Throwable t) {
                         t.printStackTrace();
-                        String errorMsg = t.getClass().getSimpleName();
-                        int nextStt = view.getTblResults().getRowCount() + 1;
-                        publish(new Object[]{"DATA", new Object[]{nextStt, "LỖI", "LỖI", 0.0, "Crashed: " + errorMsg}, null});
                     }
                 }
                 return null;
@@ -508,56 +415,27 @@ public class MainController {
             @Override
             protected void process(List<Object[]> chunks) {
                 for (Object[] chunk : chunks) {
-                    String type = (String) chunk[0];
-                    if (type.equals("STATUS")) {
+                    if (chunk[0].equals("STATUS")) {
                         view.setStatusMessage((String) chunk[1]);
-                    } else if (type.equals("DATA")) {
-                        view.addResultRow((Object[]) chunk[1]);
-                        String imagePath = (String) chunk[2];
-                        if (imagePath != null && new File(imagePath).exists()) {
-                            ImageIcon icon = new ImageIcon(new ImageIcon(imagePath).getImage()
-                                    .getScaledInstance(400, 500, Image.SCALE_SMOOTH));
-                            view.setImagePreview(icon);
-                        }
-                    } else if (type.equals("UPDATE")) {
-                        String sbd = (String) chunk[1];
-                        String maDe = (String) chunk[2];
-                        double score = (double) chunk[3];
-                        String status = (String) chunk[4];
-                        String imagePath = (String) chunk[5];
-
-                        int rowIndex = findRowIndex(sbd, maDe);
-                        if (rowIndex != -1) {
-                            DefaultTableModel model = (DefaultTableModel) view.getTblResults().getModel();
-                            model.setValueAt(score, rowIndex, 3);
-                            model.setValueAt(status, rowIndex, 4);
-                        }
-
-                        if (imagePath != null && new File(imagePath).exists()) {
-                            ImageIcon icon = new ImageIcon(new ImageIcon(imagePath).getImage()
-                                    .getScaledInstance(400, 500, Image.SCALE_SMOOTH));
-                            view.setImagePreview(icon);
-                        }
+                    } else if (chunk[0].equals("UPDATE")) {
+                        refreshTable(); // Cập nhật lại giao diện bảng ngay lập tức
                     }
                 }
             }
 
             @Override
             protected void done() {
-                try {
-                    get();
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-
+                try { get(); } catch (Exception e) {}
                 view.getBtnBackToMenu().setEnabled(true);
                 view.getBtnStartGrading().setEnabled(true);
                 view.getBtnSetAnswerKey().setEnabled(true);
-                view.setStatusMessage("Hoàn tất quy trình chạy " + selectedFiles.size() + " bài.");
 
+                // Xóa danh sách chờ sau khi đã chấm thành công
+                assignedFiles.clear();
                 refreshTable();
 
-                JOptionPane.showMessageDialog(view, "Quy trình xử lý kết thúc! Các thay đổi đã được cập nhật.");
+                view.setStatusMessage("Hoàn tất quy trình chấm bài.");
+                JOptionPane.showMessageDialog(view, "Đã chấm xong các bài thi được gán!");
             }
         };
 

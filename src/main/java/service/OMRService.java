@@ -48,8 +48,8 @@ public class OMRService {
         int p3Count = (config != null) ? config.getNumPart3() : 6;
 
         // --- 1. SỐ BÁO DANH & MÃ ĐỀ (Luôn quét cố định) ---
-        results.put("STUDENT_ID", autoColumnScan(thresh, warped, new Rect(810, 135, 205, 330), 8, 10, "SBD", new Scalar(0, 255, 255)));
-        results.put("EXAM_CODE", autoColumnScan(thresh, warped, new Rect(1043, 135, 105, 325), 4, 10, "MaDe", new Scalar(200, 0, 200)));
+        //results.put("STUDENT_ID", autoColumnScan(thresh, warped, new Rect(810, 135, 205, 330), 8, 10, "SBD", new Scalar(0, 255, 255)));
+      //  results.put("EXAM_CODE", autoColumnScan(thresh, warped, new Rect(1043, 135, 105, 325), 4, 10, "MaDe", new Scalar(200, 0, 200)));
 
         // --- 2. PHẦN I (Tính toán số lượng khung và số câu cần quét) ---
         int[] p1_X = {115, 375, 645, 915};
