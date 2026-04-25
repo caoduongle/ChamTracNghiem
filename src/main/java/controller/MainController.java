@@ -129,7 +129,6 @@ public class MainController {
     }
 
     private void initController() {
-        // --- ẨN NÚT CHỌN THƯ MỤC CŨ ĐI VÌ ĐÃ CÓ KÉO THẢ ---
         if (view.getBtnSelectFolder() != null) {
             view.getBtnSelectFolder().setVisible(false);
         }
@@ -149,9 +148,6 @@ public class MainController {
         view.getBtnDeleteResult().addActionListener(e -> deleteSelectedReport());
         view.getCbxSortResults().addActionListener(e -> refreshTable());
 
-        // ==========================================================
-        // SỰ KIỆN KÉO THẢ HÀNG LOẠT TRỰC TIẾP LÊN BẢNG
-        // ==========================================================
         view.getTblResults().setDropTarget(new DropTarget() {
             public synchronized void drop(DropTargetDropEvent evt) {
                 try {
@@ -228,9 +224,6 @@ public class MainController {
         view.getBtnExportConfig().addActionListener(e -> saveExcel("DapAn_" + currentSession.getExamName() + ".xlsx", 2));
     }
 
-    // ==========================================================
-    // ĐÃ NÂNG CẤP: MENU TÙY CHỌN DOUBLE CLICK (CÓ NÚT XÓA BÀI)
-    // ==========================================================
     private void handleStudentDoubleClick(String stt, String name) {
         model.OMRModels.ExamReport report = reportDatabase.get(stt);
         boolean hasPendingImage = assignedFiles.containsKey(stt);
@@ -246,15 +239,12 @@ public class MainController {
                 else JOptionPane.showMessageDialog(view, "Bài thi này đang chờ để chấm, chưa có chi tiết để xem!");
             }
             else if (choice == 1) openDragAndDropDialog(stt, name);
-            else if (choice == 2) removeStudentExam(stt, name); // GỌI HÀM XÓA BÀI
+            else if (choice == 2) removeStudentExam(stt, name);
         } else {
             openDragAndDropDialog(stt, name);
         }
     }
 
-    // ==========================================================
-    // HÀM MỚI: XÓA BÀI LÀM CỦA MỘT HỌC SINH
-    // ==========================================================
     private void removeStudentExam(String stt, String name) {
         int confirm = JOptionPane.showConfirmDialog(view,
                 "Bạn có chắc muốn hủy kết quả và xóa ảnh bài làm của học sinh: " + name + "?",
@@ -263,7 +253,6 @@ public class MainController {
         if (confirm == JOptionPane.YES_OPTION) {
             model.OMRModels.ExamReport report = reportDatabase.get(stt);
 
-            // 1. Xóa file ảnh vật lý trong ổ cứng (nếu có)
             if (report != null && report.imagePath != null) {
                 try {
                     java.nio.file.Files.deleteIfExists(new File(report.imagePath).toPath());
@@ -271,32 +260,67 @@ public class MainController {
                 } catch (Exception ex) {}
             }
 
-            // 2. Xóa khỏi danh sách chờ chấm & Database
             reportDatabase.remove(stt);
             assignedFiles.remove(stt);
 
-            // 3. Lưu lại vào file .dat
             if (currentSession != null) {
                 currentSession.getReports().removeIf(r -> r.studentId.equals(stt));
                 service.DataManager.saveSession(currentSession, currentClassRoom.className);
             }
 
-            // 4. Cập nhật lại giao diện
             refreshTable();
             view.setStatusMessage("Đã xóa sạch bài làm của học sinh " + name);
         }
     }
 
-    // Gắn chung logic nút "Xóa bài chọn" trên thanh công cụ vào hàm Xóa này
+    // ==========================================================
+    // ĐÃ FIX: HÀM XÓA NHIỀU HỌC SINH CÙNG LÚC (MASS DELETE)
+    // ==========================================================
     private void deleteSelectedReport() {
-        int row = view.getTblResults().getSelectedRow();
-        if (row == -1) {
-            JOptionPane.showMessageDialog(view, "Vui lòng chọn một học sinh trên bảng để xóa bài!");
+        int[] selectedRows = view.getTblResults().getSelectedRows();
+
+        if (selectedRows.length == 0) {
+            JOptionPane.showMessageDialog(view, "Vui lòng giữ Ctrl hoặc Shift để chọn các học sinh trên bảng cần xóa!");
             return;
         }
-        String stt = currentRowStts.get(row);
-        String name = (String) view.getTblResults().getValueAt(row, 1);
-        removeStudentExam(stt, name);
+
+        int confirm = JOptionPane.showConfirmDialog(view,
+                "Bạn có chắc muốn hủy kết quả và xóa ảnh bài làm của " + selectedRows.length + " học sinh đã chọn?",
+                "Xác nhận xóa hàng loạt", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+
+        if (confirm == JOptionPane.YES_OPTION) {
+            // 1. Lấy tất cả STT cần xóa
+            List<String> sttsToDelete = new ArrayList<>();
+            for (int row : selectedRows) {
+                sttsToDelete.add(currentRowStts.get(row));
+            }
+
+            // 2. Xóa dữ liệu ngầm
+            for (String stt : sttsToDelete) {
+                model.OMRModels.ExamReport report = reportDatabase.get(stt);
+
+                if (report != null && report.imagePath != null) {
+                    try {
+                        java.nio.file.Files.deleteIfExists(new File(report.imagePath).toPath());
+                        java.nio.file.Files.deleteIfExists(new File(report.imagePath.replace(".jpg", "_processed.jpg")).toPath());
+                    } catch (Exception ex) {}
+                }
+
+                reportDatabase.remove(stt);
+                assignedFiles.remove(stt);
+
+                if (currentSession != null) {
+                    currentSession.getReports().removeIf(r -> r.studentId.equals(stt));
+                }
+            }
+
+            // 3. Lưu lại và làm mới giao diện 1 lần duy nhất
+            if (currentSession != null) {
+                service.DataManager.saveSession(currentSession, currentClassRoom.className);
+            }
+            refreshTable();
+            view.setStatusMessage("Đã xóa sạch bài làm của " + selectedRows.length + " học sinh.");
+        }
     }
 
     private void openDragAndDropDialog(String stt, String name) {

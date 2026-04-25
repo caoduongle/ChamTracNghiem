@@ -45,7 +45,6 @@ public class MainView extends JFrame {
 
         btnSelectAll = new JButton("☑ Chọn tất cả");
         panelControl.add(btnSelectAll);
-        panelControl.add(btnDeletePermanent);
         panelControl.add(btnExportScores);
         panelControl.add(btnExportConfig);
         panelControl.add(btnBackToMenu);
