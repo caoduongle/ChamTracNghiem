@@ -2,79 +2,118 @@ package view;
 
 import service.DataManager;
 import javax.swing.*;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableRowSorter;
 import java.awt.*;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
 
 public class TrashDialog extends JDialog {
-    private JTable tblTrash;
-    private DefaultTableModel tableModel;
+    private final JTable tblTrash;
+    private final DefaultTableModel tableModel;
+    private final JTextField txtSearch;
+    private final TableRowSorter<DefaultTableModel> sorter;
     private List<DataManager.TrashedItem> trashedItems;
+    private final SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy HH:mm");
 
     public TrashDialog(JDialog parent) {
         super(parent, "Thùng rác (Tự động xóa sau 30 ngày)", true);
-        setSize(400, 300);
-        setLayout(new BorderLayout());
+        setSize(750, 450);
+        setLayout(new BorderLayout(5, 5));
 
-        // Bảng hiển thị
-        String[] cols = {"Tên Đề Thi", "Số ngày còn lại"};
+        JPanel pnlSearch = new JPanel(new BorderLayout(5, 5));
+        pnlSearch.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+        txtSearch = new JTextField();
+        pnlSearch.add(new JLabel(" 🔍 Tìm kiếm đề thi: "), BorderLayout.WEST);
+        pnlSearch.add(txtSearch, BorderLayout.CENTER);
+        add(pnlSearch, BorderLayout.NORTH);
+
+        String[] cols = {"Tên Đề Thi", "Ngày Tạo", "Ngày Xóa", "Hạn còn lại"};
         tableModel = new DefaultTableModel(cols, 0) {
             @Override
             public boolean isCellEditable(int row, int column) { return false; }
         };
         tblTrash = new JTable(tableModel);
+        // QUAN TRỌNG: Cho phép chọn nhiều hàng cùng lúc
+        tblTrash.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+
+        sorter = new TableRowSorter<>(tableModel);
+        tblTrash.setRowSorter(sorter);
         add(new JScrollPane(tblTrash), BorderLayout.CENTER);
 
-        // Nút bấm
         JPanel pnlBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        JButton btnRestore = new JButton("Khôi phục");
-        JButton btnDelete = new JButton("Xóa vĩnh viễn");
+        JButton btnRestore = new JButton("Khôi phục bài chọn");
+        JButton btnDelete = new JButton("❌ Xóa vĩnh viễn");
         JButton btnClose = new JButton("Đóng");
 
-        pnlBtns.add(btnRestore);
-        pnlBtns.add(btnDelete);
-        pnlBtns.add(btnClose);
+        pnlBtns.add(btnRestore); pnlBtns.add(btnDelete); pnlBtns.add(btnClose);
         add(pnlBtns, BorderLayout.SOUTH);
 
         loadTrashData();
 
-        // --- SỰ KIỆN NÚT BẤM ---
+        txtSearch.getDocument().addDocumentListener(new DocumentListener() {
+            public void insertUpdate(DocumentEvent e) { filter(); }
+            public void removeUpdate(DocumentEvent e) { filter(); }
+            public void changedUpdate(DocumentEvent e) { filter(); }
+        });
+
+        // --- KHÔI PHỤC HÀNG LOẠT ---
         btnRestore.addActionListener(e -> {
-            int row = tblTrash.getSelectedRow();
-            if (row != -1) {
-                DataManager.restoreFromTrash(trashedItems.get(row).trashFileName);
+            int[] rows = tblTrash.getSelectedRows();
+            if (rows.length > 0) {
+                for (int viewRow : rows) {
+                    // Chuyển đổi index từ bảng đã lọc sang index chuẩn của data
+                    int modelRow = tblTrash.convertRowIndexToModel(viewRow);
+                    DataManager.restoreFromTrash(trashedItems.get(modelRow).trashFileName);
+                }
                 loadTrashData();
-                JOptionPane.showMessageDialog(this, "Đã khôi phục đề thi thành công!");
+                JOptionPane.showMessageDialog(this, "Đã khôi phục các đề thi được chọn!");
             } else {
-                JOptionPane.showMessageDialog(this, "Vui lòng chọn một đề thi để khôi phục!");
+                JOptionPane.showMessageDialog(this, "Vui lòng bôi đen các đề thi cần khôi phục!");
             }
         });
 
         btnDelete.addActionListener(e -> {
-            int row = tblTrash.getSelectedRow();
-            if (row != -1) {
+            int[] rows = tblTrash.getSelectedRows();
+            if (rows.length > 0) {
                 int confirm = JOptionPane.showConfirmDialog(this,
-                        "Bạn có chắc chắn muốn xóa VĨNH VIỄN đề này không? Không thể khôi phục!",
+                        "Xóa VĨNH VIỄN " + rows.length + " đề? Thao tác này không thể hoàn tác!",
                         "Cảnh báo", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
                 if (confirm == JOptionPane.YES_OPTION) {
-                    DataManager.deletePermanently(trashedItems.get(row).trashFileName);
+                    for (int viewRow : rows) {
+                        int modelRow = tblTrash.convertRowIndexToModel(viewRow);
+                        DataManager.deletePermanently(trashedItems.get(modelRow).trashFileName);
+                    }
                     loadTrashData();
                 }
             } else {
-                JOptionPane.showMessageDialog(this, "Vui lòng chọn một đề thi để xóa!");
+                JOptionPane.showMessageDialog(this, "Vui lòng chọn đề thi!");
             }
         });
 
         btnClose.addActionListener(e -> dispose());
-
         setLocationRelativeTo(parent);
+    }
+
+    private void filter() {
+        String text = txtSearch.getText();
+        if (text.trim().isEmpty()) sorter.setRowFilter(null);
+        else sorter.setRowFilter(RowFilter.regexFilter("(?i)" + text, 0));
     }
 
     private void loadTrashData() {
         tableModel.setRowCount(0);
         trashedItems = DataManager.listTrashedExams();
         for (DataManager.TrashedItem item : trashedItems) {
-            tableModel.addRow(new Object[]{item.originalName, item.daysLeft + " ngày"});
+            tableModel.addRow(new Object[]{
+                    item.originalName,
+                    sdf.format(new Date(item.creationTime)),
+                    sdf.format(new Date(item.deletionTime)),
+                    item.daysLeft + " ngày"
+            });
         }
     }
 }

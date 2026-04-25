@@ -37,6 +37,7 @@ public class OMRModels {
         public double totalScore;
         public String imagePath;
         public List<AnswerRecord> details = new ArrayList<>();
+        public String originalImagePath;
 
         public void printReport() {
             System.out.println("\n================= PHIẾU ĐIỂM ==================");

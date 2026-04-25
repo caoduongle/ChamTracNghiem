@@ -16,6 +16,9 @@ public class MainView extends JFrame {
     private JLabel lblStatus;
     private JButton btnDeleteResult;
     private JComboBox<String> cbxSortResults;
+    private JButton btnExportScores, btnExportConfig;
+    private JButton btnDeletePermanent;
+    private JButton btnSelectAll;
 
     public MainView() {
         setTitle("Phần mềm Chấm Trắc Nghiệm - Team N7");
@@ -37,7 +40,16 @@ public class MainView extends JFrame {
 
         btnDeleteResult = new JButton("❌ Xóa bài chọn");
         cbxSortResults = new JComboBox<>(new String[]{"Sắp xếp: Mặc định", "Sắp xếp: SBD", "Sắp xếp: Điểm (Cao-Thấp)"});
+        btnExportScores = new JButton("📊 Xuất Bảng Điểm");
+        btnExportConfig = new JButton("📝 Xuất Đáp Án");
 
+        btnDeletePermanent = new JButton("☢ Xóa vĩnh viễn");
+        btnDeletePermanent.setForeground(Color.RED); // Chữ màu đỏ cho ngầu và cảnh báo
+        btnSelectAll = new JButton("☑ Chọn tất cả");
+        panelControl.add(btnSelectAll);
+        panelControl.add(btnDeletePermanent);
+        panelControl.add(btnExportScores);
+        panelControl.add(btnExportConfig);
         panelControl.add(btnBackToMenu);
         panelControl.add(btnSelectFolder);
         panelControl.add(btnSetAnswerKey);
@@ -106,4 +118,8 @@ public class MainView extends JFrame {
     }
     public JButton getBtnDeleteResult() { return btnDeleteResult; }
     public JComboBox<String> getCbxSortResults() { return cbxSortResults; }
+    public JButton getBtnExportScores() { return btnExportScores; }
+    public JButton getBtnExportConfig() { return btnExportConfig; }
+    public JButton getBtnDeletePermanent() { return btnDeletePermanent; }
+    public JButton getBtnSelectAll() { return btnSelectAll; }
 }

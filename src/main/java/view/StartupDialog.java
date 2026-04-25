@@ -4,8 +4,11 @@ import service.DataManager;
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableRowSorter;
 import java.awt.*;
 import java.io.File;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
@@ -13,9 +16,9 @@ import java.util.Date;
 import java.util.List;
 
 public class StartupDialog extends JDialog {
-    private JList<String> listExams;
-    private DefaultListModel<String> listModel;
-    private JButton btnNew, btnOpen, btnDelete, btnTrash, btnTutorial; // Thêm biến btnTutorial
+    private JTable tblExams;
+    private DefaultTableModel tableModel;
+    private JButton btnNew, btnOpen, btnDelete, btnTrash, btnTutorial;
     private String selectedExam = null;
     private boolean isNew = false;
 
@@ -33,7 +36,7 @@ public class StartupDialog extends JDialog {
 
     public StartupDialog(JFrame parent) {
         super(parent, "Quản lý đề thi - Team N7", true);
-        setSize(550, 650); // Tăng form cao lên một chút để chứa nút Hướng dẫn
+        setSize(650, 650);
         setLayout(new BorderLayout(5, 5));
 
         // 1. THANH TÌM KIẾM, LỌC & SẮP XẾP
@@ -42,7 +45,6 @@ public class StartupDialog extends JDialog {
 
         JPanel pnlRow1 = new JPanel(new BorderLayout(5, 5));
         txtSearch = new JTextField();
-
         cbxDateFilter = new JComboBox<>(new String[]{"Tất cả thời gian", "Hôm nay", "7 ngày qua", "30 ngày qua", "Tùy chọn..."});
         cbxSort = new JComboBox<>(new String[]{"Tên (A-Z)", "Tên (Z-A)", "Mới nhất", "Cũ nhất"});
 
@@ -73,18 +75,22 @@ public class StartupDialog extends JDialog {
         pnlSearchContainer.add(pnlRow2);
         add(pnlSearchContainer, BorderLayout.NORTH);
 
-        // 2. DANH SÁCH ĐỀ THI
-        listModel = new DefaultListModel<>();
-        listExams = new JList<>(listModel);
-        listExams.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        // 2. DANH SÁCH ĐỀ THI (SỬ DỤNG JTABLE THAY CHO JLIST)
+        String[] cols = {"Tên Đề Thi", "Ngày Tạo/Cập Nhật"};
+        tableModel = new DefaultTableModel(cols, 0) {
+            @Override
+            public boolean isCellEditable(int r, int c) { return false; }
+        };
+        tblExams = new JTable(tableModel);
+        tblExams.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         refreshExamList();
 
         JPanel pnlList = new JPanel(new BorderLayout());
         pnlList.setBorder(BorderFactory.createTitledBorder("Danh sách Đề thi:"));
-        pnlList.add(new JScrollPane(listExams), BorderLayout.CENTER);
+        pnlList.add(new JScrollPane(tblExams), BorderLayout.CENTER);
         add(pnlList, BorderLayout.CENTER);
 
-        // 3. VÙNG NÚT CHỨC NĂNG (Đã được thiết kế lại để thêm nút Hướng dẫn)
+        // 3. VÙNG NÚT CHỨC NĂNG
         JPanel pnlBottomControls = new JPanel(new BorderLayout(0, 5));
         pnlBottomControls.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
@@ -97,19 +103,15 @@ public class StartupDialog extends JDialog {
         pnlBtns.add(btnNew); pnlBtns.add(btnOpen);
         pnlBtns.add(btnDelete); pnlBtns.add(btnTrash);
 
-        // Khởi tạo nút Hướng dẫn
         btnTutorial = new JButton("Hướng dẫn sử dụng");
         btnTutorial.setFont(new Font("Arial", Font.BOLD, 14));
-        btnTutorial.setForeground(new Color(0, 102, 204)); // Tô màu xanh cho nổi bật
+        btnTutorial.setForeground(new Color(0, 102, 204));
 
         pnlBottomControls.add(pnlBtns, BorderLayout.CENTER);
-        pnlBottomControls.add(btnTutorial, BorderLayout.SOUTH); // Nút hướng dẫn nằm dưới cùng
-
+        pnlBottomControls.add(btnTutorial, BorderLayout.SOUTH);
         add(pnlBottomControls, BorderLayout.SOUTH);
 
-        // ==========================================
-        // LẮNG NGHE SỰ KIỆN
-        // ==========================================
+        // --- SỰ KIỆN ---
         txtSearch.getDocument().addDocumentListener(new DocumentListener() {
             public void insertUpdate(DocumentEvent e) { applyFilters(); }
             public void removeUpdate(DocumentEvent e) { applyFilters(); }
@@ -124,9 +126,6 @@ public class StartupDialog extends JDialog {
 
         cbxSort.addActionListener(e -> applyFilters());
 
-        spinFromDate.addChangeListener(e -> { if (spinFromDate.isEnabled()) applyFilters(); });
-        spinToDate.addChangeListener(e -> { if (spinToDate.isEnabled()) applyFilters(); });
-
         btnNew.addActionListener(e -> {
             String name = JOptionPane.showInputDialog(this, "Nhập tên đề thi mới:");
             if (name != null && !name.trim().isEmpty()) {
@@ -135,23 +134,22 @@ public class StartupDialog extends JDialog {
         });
 
         btnOpen.addActionListener(e -> {
-            selectedExam = listExams.getSelectedValue();
-            if (selectedExam != null) {
-                isNew = false;
-                dispose();
+            int row = tblExams.getSelectedRow();
+            if (row != -1) {
+                selectedExam = tblExams.getValueAt(row, 0).toString();
+                isNew = false; dispose();
             } else {
-                JOptionPane.showMessageDialog(this, "Vui lòng click chọn một đề thi trong danh sách trước khi mở!", "Chưa chọn đề", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Vui lòng chọn một đề thi trong bảng!", "Chưa chọn", JOptionPane.WARNING_MESSAGE);
             }
         });
 
         btnDelete.addActionListener(e -> {
-            String toDelete = listExams.getSelectedValue();
-            if (toDelete != null) {
+            int row = tblExams.getSelectedRow();
+            if (row != -1) {
+                String toDelete = tblExams.getValueAt(row, 0).toString();
                 if (JOptionPane.showConfirmDialog(this, "Đưa '" + toDelete + "' vào thùng rác?", "Xóa", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
                     DataManager.moveToTrash(toDelete); refreshExamList();
                 }
-            } else {
-                JOptionPane.showMessageDialog(this, "Vui lòng click chọn một đề thi để xóa!", "Chưa chọn đề", JOptionPane.WARNING_MESSAGE);
             }
         });
 
@@ -159,19 +157,11 @@ public class StartupDialog extends JDialog {
             new TrashDialog(this).setVisible(true); refreshExamList();
         });
 
-        // --- Sự kiện Nút Hướng Dẫn ---
-        btnTutorial.addActionListener(e -> {
-            new TutorialDialog(parent).setVisible(true);
-        });
+        btnTutorial.addActionListener(e -> new TutorialDialog(parent).setVisible(true));
 
         setLocationRelativeTo(parent);
-
-        // --- HIỂN THỊ HƯỚNG DẪN TỰ ĐỘNG ---
-        // Sử dụng invokeLater để đảm bảo form Startup load xong thì form Hướng dẫn mới đè lên
         if (DataManager.shouldShowTutorial()) {
-            SwingUtilities.invokeLater(() -> {
-                new TutorialDialog(parent).setVisible(true);
-            });
+            SwingUtilities.invokeLater(() -> new TutorialDialog(parent).setVisible(true));
         }
     }
 
@@ -182,8 +172,7 @@ public class StartupDialog extends JDialog {
 
     private void applyFilters() {
         if (allExamsCache == null) return;
-
-        listModel.clear();
+        tableModel.setRowCount(0);
         String keyword = txtSearch.getText().toLowerCase().trim();
         int dateMode = cbxDateFilter.getSelectedIndex();
         int sortMode = cbxSort.getSelectedIndex();
@@ -201,13 +190,11 @@ public class StartupDialog extends JDialog {
         List<ExamFileItem> filteredItems = new ArrayList<>();
         for (String name : allExamsCache) {
             if (!name.toLowerCase().contains(keyword)) continue;
-
             File f = new File("data/" + name + ".dat");
             if (f.exists()) {
                 long lastModified = f.lastModified();
                 long diffDays = (now - lastModified) / oneDayMs;
                 boolean pass = true;
-
                 if (dateMode == 1 && diffDays > 0) pass = false;
                 else if (dateMode == 2 && diffDays > 7) pass = false;
                 else if (dateMode == 3 && diffDays > 30) pass = false;
@@ -227,8 +214,9 @@ public class StartupDialog extends JDialog {
             }
         });
 
+        SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy HH:mm");
         for (ExamFileItem item : filteredItems) {
-            listModel.addElement(item.name);
+            tableModel.addRow(new Object[]{item.name, sdf.format(new Date(item.lastModified))});
         }
     }
 
