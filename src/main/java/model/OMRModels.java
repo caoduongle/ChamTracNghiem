@@ -38,6 +38,10 @@ public class OMRModels {
         public String imagePath;
         public List<AnswerRecord> details = new ArrayList<>();
         public String originalImagePath;
+        public String studentName = "";
+        public String studentSttFile = "";
+        public String studentClass = "";
+        public String statusMessage = "";
 
         public void printReport() {
             System.out.println("\n================= PHIẾU ĐIỂM ==================");

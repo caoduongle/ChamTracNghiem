@@ -19,8 +19,13 @@ public class TrashDialog extends JDialog {
     private List<DataManager.TrashedItem> trashedItems;
     private final SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy HH:mm");
 
-    public TrashDialog(JDialog parent) {
-        super(parent, "Thùng rác (Tự động xóa sau 30 ngày)", true);
+    private String currentClassName;
+
+    // CONSTRUCTOR ĐÃ THÊM TÊN LỚP
+    public TrashDialog(JDialog parent, String className) {
+        super(parent, "Thùng rác Lớp " + className, true);
+        this.currentClassName = className;
+
         setSize(750, 450);
         setLayout(new BorderLayout(5, 5));
 
@@ -37,7 +42,6 @@ public class TrashDialog extends JDialog {
             public boolean isCellEditable(int row, int column) { return false; }
         };
         tblTrash = new JTable(tableModel);
-        // QUAN TRỌNG: Cho phép chọn nhiều hàng cùng lúc
         tblTrash.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
 
         sorter = new TableRowSorter<>(tableModel);
@@ -60,37 +64,28 @@ public class TrashDialog extends JDialog {
             public void changedUpdate(DocumentEvent e) { filter(); }
         });
 
-        // --- KHÔI PHỤC HÀNG LOẠT ---
         btnRestore.addActionListener(e -> {
             int[] rows = tblTrash.getSelectedRows();
             if (rows.length > 0) {
                 for (int viewRow : rows) {
-                    // Chuyển đổi index từ bảng đã lọc sang index chuẩn của data
                     int modelRow = tblTrash.convertRowIndexToModel(viewRow);
-                    DataManager.restoreFromTrash(trashedItems.get(modelRow).trashFileName);
+                    DataManager.restoreFromTrash(trashedItems.get(modelRow).trashFileName, currentClassName);
                 }
                 loadTrashData();
-                JOptionPane.showMessageDialog(this, "Đã khôi phục các đề thi được chọn!");
-            } else {
-                JOptionPane.showMessageDialog(this, "Vui lòng bôi đen các đề thi cần khôi phục!");
+                JOptionPane.showMessageDialog(this, "Đã khôi phục các đề thi!");
             }
         });
 
         btnDelete.addActionListener(e -> {
             int[] rows = tblTrash.getSelectedRows();
             if (rows.length > 0) {
-                int confirm = JOptionPane.showConfirmDialog(this,
-                        "Xóa VĨNH VIỄN " + rows.length + " đề? Thao tác này không thể hoàn tác!",
-                        "Cảnh báo", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-                if (confirm == JOptionPane.YES_OPTION) {
+                if (JOptionPane.showConfirmDialog(this, "Xóa VĨNH VIỄN?", "Cảnh báo", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
                     for (int viewRow : rows) {
                         int modelRow = tblTrash.convertRowIndexToModel(viewRow);
-                        DataManager.deletePermanently(trashedItems.get(modelRow).trashFileName);
+                        DataManager.deletePermanently(trashedItems.get(modelRow).trashFileName, currentClassName);
                     }
                     loadTrashData();
                 }
-            } else {
-                JOptionPane.showMessageDialog(this, "Vui lòng chọn đề thi!");
             }
         });
 
@@ -106,13 +101,11 @@ public class TrashDialog extends JDialog {
 
     private void loadTrashData() {
         tableModel.setRowCount(0);
-        trashedItems = DataManager.listTrashedExams();
+        trashedItems = DataManager.listTrashedExams(currentClassName);
         for (DataManager.TrashedItem item : trashedItems) {
             tableModel.addRow(new Object[]{
-                    item.originalName,
-                    sdf.format(new Date(item.creationTime)),
-                    sdf.format(new Date(item.deletionTime)),
-                    item.daysLeft + " ngày"
+                    item.originalName, sdf.format(new Date(item.creationTime)),
+                    sdf.format(new Date(item.deletionTime)), item.daysLeft + " ngày"
             });
         }
     }

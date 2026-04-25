@@ -29,10 +29,8 @@ public class MainController {
     private ClassRoom currentClassRoom;
 
     private Map<String, model.OMRModels.ExamReport> reportDatabase = new HashMap<>();
-
-    // THÊM: Bản đồ lưu trữ ảnh được gán thủ công (Key: STT học sinh, Value: File ảnh)
     private Map<String, File> assignedFiles = new HashMap<>();
-    private List<String> currentRowStts = new ArrayList<>(); // Theo dõi thứ tự STT trên bảng
+    private List<String> currentRowStts = new ArrayList<>();
 
     public MainController(MainView view) {
         this.view = view;
@@ -58,7 +56,8 @@ public class MainController {
     }
 
     private void showStartupMenu(boolean isFirstRun) {
-        StartupDialog startup = new StartupDialog(view);
+        // TRUYỀN TÊN LỚP VÀO ĐÂY
+        StartupDialog startup = new StartupDialog(view, currentClassRoom.className);
         startup.setVisible(true);
 
         if (startup.getSelectedExam() != null) {
@@ -66,7 +65,8 @@ public class MainController {
                 currentSession = new ExamSession(startup.getSelectedExam(), null);
                 this.currentConfig = null;
             } else {
-                currentSession = DataManager.loadSession(startup.getSelectedExam());
+                // LOAD CŨNG TRUYỀN TÊN LỚP VÀO
+                currentSession = DataManager.loadSession(startup.getSelectedExam(), currentClassRoom.className);
                 if (currentSession != null) this.currentConfig = currentSession.getConfig();
             }
             view.setTitle("Phần mềm Chấm Thi | Lớp: " + currentClassRoom.className + " | Đề: " + currentSession.getExamName());
@@ -79,17 +79,13 @@ public class MainController {
 
     private void setupTableColumns() {
         DefaultTableModel model = (DefaultTableModel) view.getTblResults().getModel();
-        // Bảng bây giờ có thêm cột "File Ảnh Bài Làm" để giáo viên dễ theo dõi
         model.setColumnIdentifiers(new Object[]{"STT", "Họ Tên Học Sinh", "File Ảnh Bài Làm", "Tổng điểm", "Trạng thái"});
     }
 
-    // =========================================================
-    // LOAD DỮ LIỆU: Luôn hiển thị TẤT CẢ học sinh trong lớp
-    // =========================================================
     private void loadSessionToUI() {
         if (currentSession != null && currentSession.getReports() != null) {
             for (model.OMRModels.ExamReport report : currentSession.getReports()) {
-                reportDatabase.put(report.studentId, report); // studentId lúc này đóng vai trò là STT
+                reportDatabase.put(report.studentId, report);
             }
         }
         refreshTable();
@@ -102,14 +98,12 @@ public class MainController {
         model.setRowCount(0);
         currentRowStts.clear();
 
-        // Duyệt qua TẤT CẢ học sinh của lớp thay vì chỉ duyệt những người đã có điểm
         for (ClassRoom.Student student : currentClassRoom.students) {
             String stt = String.valueOf(student.stt);
             currentRowStts.add(stt);
 
             model.OMRModels.ExamReport report = reportDatabase.get(stt);
 
-            // XÁC ĐỊNH FILE ẢNH ĐANG ĐƯỢC GÁN
             String fileName = "--- Chưa có ảnh ---";
             if (assignedFiles.containsKey(stt)) {
                 fileName = "⏳ " + assignedFiles.get(stt).getName() + " (Chờ chấm)";
@@ -136,17 +130,13 @@ public class MainController {
             }
         });
 
-        // Thay vì mở folder chọn hàng loạt như cũ, báo cho user biết cách làm mới
         view.getBtnSelectFolder().addActionListener(e -> {
-            JOptionPane.showMessageDialog(view, "TÍNH NĂNG MỚI: \nHãy CLICK ĐÚP CHUỘT vào tên học sinh trong bảng để chọn ảnh bài làm cho học sinh đó!", "Hướng dẫn", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(view, "Hãy CLICK ĐÚP CHUỘT vào tên học sinh trong bảng để gán ảnh bài làm!", "Hướng dẫn", JOptionPane.INFORMATION_MESSAGE);
         });
 
         view.getBtnDeleteResult().addActionListener(e -> deleteSelectedReport());
         view.getCbxSortResults().addActionListener(e -> refreshTable());
 
-        // =========================================================
-        // SỰ KIỆN NHẤN ĐÚP CHUỘT VÀO HỌC SINH
-        // =========================================================
         view.getTblResults().addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -168,7 +158,8 @@ public class MainController {
                 this.currentConfig = dialog.getExamConfig();
                 if (currentSession != null) {
                     currentSession.setConfig(this.currentConfig);
-                    DataManager.saveSession(currentSession);
+                    // SAVE CÓ TRUYỀN TÊN LỚP
+                    DataManager.saveSession(currentSession, currentClassRoom.className);
                 }
                 dialog.dispose();
                 view.setStatusMessage("Đã lưu cấu hình: " + currentConfig.getTotalQuestions() + " câu.");
@@ -181,37 +172,27 @@ public class MainController {
         view.getBtnExportConfig().addActionListener(e -> saveExcel("DapAn_" + currentSession.getExamName() + ".xlsx", 2));
     }
 
-    // =========================================================
-    // LOGIC XỬ LÝ KHI CLICK ĐÚP VÀO HỌC SINH
-    // =========================================================
     private void handleStudentDoubleClick(String stt, String name) {
         model.OMRModels.ExamReport report = reportDatabase.get(stt);
-
         if (report != null) {
-            // Nếu học sinh ĐÃ CÓ ĐIỂM -> Hỏi giáo viên muốn làm gì
-            String[] options = {"🔍 Xem chi tiết bài đã chấm", "📁 Chọn ảnh khác để chấm lại", "Hủy"};
+            String[] options = {"🔍 Xem chi tiết", "📁 Gán lại ảnh khác", "Hủy"};
             int choice = JOptionPane.showOptionDialog(view,
-                    "Học sinh " + name + " đã có kết quả. Bạn muốn làm gì?",
+                    "Học sinh " + name + " đã có điểm. Chọn thao tác:",
                     "Tùy chọn", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
 
             if (choice == 0) showWrongAnswersDialog(stt);
             else if (choice == 1) selectImageForStudent(stt, name);
         } else {
-            // Nếu học sinh CHƯA CÓ ĐIỂM -> Mở ngay bảng chọn file ảnh
             selectImageForStudent(stt, name);
         }
     }
 
-    // Hộp thoại chọn ảnh riêng cho 1 học sinh
     private void selectImageForStudent(String stt, String name) {
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Chọn ảnh bài làm cho học sinh: " + name);
-
         if (chooser.showOpenDialog(view) == JFileChooser.APPROVE_OPTION) {
-            File file = chooser.getSelectedFile();
-            // Lưu file vào danh sách chờ chấm của học sinh này
-            assignedFiles.put(stt, file);
-            refreshTable(); // Bảng sẽ cập nhật hiện biểu tượng ⏳ Chờ chấm
+            assignedFiles.put(stt, chooser.getSelectedFile());
+            refreshTable();
         }
     }
 
@@ -245,11 +226,12 @@ public class MainController {
             }
 
             reportDatabase.remove(stt);
-            assignedFiles.remove(stt); // Xóa luôn file đang gán nếu có
+            assignedFiles.remove(stt);
 
             if (currentSession != null) {
                 currentSession.getReports().removeIf(r -> r.studentId.equals(stt));
-                service.DataManager.saveSession(currentSession);
+                // XÓA THÌ PHẢI LƯU LẠI
+                service.DataManager.saveSession(currentSession, currentClassRoom.className);
             }
             refreshTable();
         }
@@ -331,9 +313,6 @@ public class MainController {
         dialog.setVisible(true);
     }
 
-    // =========================================================
-    // HÀM CHẤM BÀI DỰA TRÊN DANH SÁCH ẢNH ĐƯỢC GÁN
-    // =========================================================
     private void startGradingProcess() {
         if (assignedFiles.isEmpty()) {
             JOptionPane.showMessageDialog(view, "Chưa có ảnh nào được gán! Hãy click đúp vào tên học sinh để gán ảnh trước khi chấm.", "Thiếu thông tin", JOptionPane.WARNING_MESSAGE);
@@ -351,13 +330,12 @@ public class MainController {
                 view.getBtnStartGrading().setEnabled(false);
                 view.getBtnSetAnswerKey().setEnabled(false);
 
-                // Duyệt qua tất cả các file đã được gán thủ công
                 for (Map.Entry<String, File> entry : assignedFiles.entrySet()) {
-                    String stt = entry.getKey(); // ID của học sinh là STT
+                    String stt = entry.getKey();
                     File file = entry.getValue();
 
                     try {
-                        publish(new Object[]{"STATUS", "Đang chấm cho STT " + stt + ": " + file.getName()});
+                        publish(new Object[]{"STATUS", "Đang chấm bài cho STT " + stt + "..."});
 
                         Map<String, String> studentResults = OMRService.processExam(file.getAbsolutePath(), currentConfig);
 
@@ -368,7 +346,7 @@ public class MainController {
                             }
 
                             model.OMRModels.ExamReport newReport = service.ScoringEngine.gradeExam(
-                                    stt, "AUTO", studentResults, currentConfig // STT đóng vai trò là SBD
+                                    stt, "AUTO", studentResults, currentConfig
                             );
 
                             newReport.originalImagePath = file.getAbsolutePath();
@@ -378,7 +356,8 @@ public class MainController {
                             newReport.statusMessage = "Thành công";
 
                             try {
-                                File imageDir = new File("data/images/" + currentSession.getExamName());
+                                // TẠO THƯ MỤC ẢNH RIÊNG CHO LỚP
+                                File imageDir = new File("data/classes/" + currentClassRoom.className + "/images/" + currentSession.getExamName());
                                 if (!imageDir.exists()) imageDir.mkdirs();
 
                                 File destFile = new File(imageDir, stt + ".jpg");
@@ -395,15 +374,14 @@ public class MainController {
                                 newReport.imagePath = file.getAbsolutePath();
                             }
 
-                            // Lưu vào database
                             reportDatabase.put(stt, newReport);
                             if (currentSession != null) {
                                 currentSession.getReports().removeIf(r -> r.studentId.equals(stt));
                                 currentSession.addReport(newReport);
-                                service.DataManager.saveSession(currentSession);
+                                // CHẤM XONG LƯU VÀO FOLDER CỦA LỚP
+                                service.DataManager.saveSession(currentSession, currentClassRoom.className);
                             }
-
-                            publish(new Object[]{"UPDATE", stt}); // Chỉ cần gửi STT để refresh bảng
+                            publish(new Object[]{"UPDATE", stt});
                         }
                     } catch (Throwable t) {
                         t.printStackTrace();
@@ -415,11 +393,8 @@ public class MainController {
             @Override
             protected void process(List<Object[]> chunks) {
                 for (Object[] chunk : chunks) {
-                    if (chunk[0].equals("STATUS")) {
-                        view.setStatusMessage((String) chunk[1]);
-                    } else if (chunk[0].equals("UPDATE")) {
-                        refreshTable(); // Cập nhật lại giao diện bảng ngay lập tức
-                    }
+                    if (chunk[0].equals("STATUS")) view.setStatusMessage((String) chunk[1]);
+                    else if (chunk[0].equals("UPDATE")) refreshTable();
                 }
             }
 
@@ -430,12 +405,11 @@ public class MainController {
                 view.getBtnStartGrading().setEnabled(true);
                 view.getBtnSetAnswerKey().setEnabled(true);
 
-                // Xóa danh sách chờ sau khi đã chấm thành công
                 assignedFiles.clear();
                 refreshTable();
 
                 view.setStatusMessage("Hoàn tất quy trình chấm bài.");
-                JOptionPane.showMessageDialog(view, "Đã chấm xong các bài thi được gán!");
+                JOptionPane.showMessageDialog(view, "Đã chấm xong! Dữ liệu đã được lưu riêng cho lớp " + currentClassRoom.className);
             }
         };
 

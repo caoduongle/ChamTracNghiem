@@ -27,18 +27,23 @@ public class StartupDialog extends JDialog {
     private JSpinner spinFromDate, spinToDate;
     private List<String> allExamsCache;
 
+    // BIẾN MỚI LƯU TÊN LỚP
+    private String currentClassName;
+
     private class ExamFileItem {
         String name;
         long lastModified;
         ExamFileItem(String name, long time) { this.name = name; this.lastModified = time; }
     }
 
-    public StartupDialog(JFrame parent) {
-        super(parent, "Quản lý đề thi - Team N7", true);
+    // CẬP NHẬT CONSTRUCTOR TRUYỀN TÊN LỚP VÀO
+    public StartupDialog(JFrame parent, String className) {
+        super(parent, "Quản lý đề thi - Lớp: " + className, true);
+        this.currentClassName = className;
+
         setSize(650, 700);
         setLayout(new BorderLayout(5, 5));
 
-        // 1. THANH TÌM KIẾM
         JPanel pnlSearchContainer = new JPanel(new GridLayout(2, 1, 5, 5));
         pnlSearchContainer.setBorder(BorderFactory.createTitledBorder("Tìm kiếm, Lọc & Sắp xếp"));
 
@@ -74,7 +79,6 @@ public class StartupDialog extends JDialog {
         pnlSearchContainer.add(pnlRow2);
         add(pnlSearchContainer, BorderLayout.NORTH);
 
-        // 2. DANH SÁCH ĐỀ THI
         String[] cols = {"Tên Đề Thi", "Ngày Tạo/Cập Nhật"};
         tableModel = new DefaultTableModel(cols, 0) {
             @Override
@@ -89,7 +93,6 @@ public class StartupDialog extends JDialog {
         pnlList.add(new JScrollPane(tblExams), BorderLayout.CENTER);
         add(pnlList, BorderLayout.CENTER);
 
-        // 3. VÙNG NÚT CHỨC NĂNG (Đã sửa lại GridLayout thành 3x2)
         JPanel pnlBottomControls = new JPanel(new BorderLayout(0, 5));
         pnlBottomControls.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
@@ -136,18 +139,17 @@ public class StartupDialog extends JDialog {
                 selectedExam = tblExams.getValueAt(row, 0).toString();
                 isNew = false; dispose();
             } else {
-                JOptionPane.showMessageDialog(this, "Vui lòng chọn một đề thi!", "Chưa chọn", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Vui lòng chọn một đề thi!");
             }
         });
 
-        // --- SỰ KIỆN ĐỔI TÊN ĐỀ THI ---
         btnRename.addActionListener(e -> {
             int row = tblExams.getSelectedRow();
             if (row != -1) {
                 String oldName = tblExams.getValueAt(row, 0).toString();
-                String newName = JOptionPane.showInputDialog(this, "Nhập tên mới cho đề '" + oldName + "':", oldName);
+                String newName = JOptionPane.showInputDialog(this, "Nhập tên mới:", oldName);
                 if (newName != null && !newName.trim().isEmpty() && !newName.equals(oldName)) {
-                    DataManager.renameExam(oldName, newName.trim());
+                    DataManager.renameExam(oldName, newName.trim(), currentClassName);
                     refreshExamList();
                 }
             } else {
@@ -160,22 +162,20 @@ public class StartupDialog extends JDialog {
             if (row != -1) {
                 String toDelete = tblExams.getValueAt(row, 0).toString();
                 if (JOptionPane.showConfirmDialog(this, "Đưa '" + toDelete + "' vào thùng rác?", "Xóa", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
-                    DataManager.moveToTrash(toDelete); refreshExamList();
+                    DataManager.moveToTrash(toDelete, currentClassName); refreshExamList();
                 }
             }
         });
 
         btnTrash.addActionListener(e -> {
-            new TrashDialog(this).setVisible(true); refreshExamList();
+            new TrashDialog(this, currentClassName).setVisible(true); refreshExamList();
         });
-
-        btnTutorial.addActionListener(e -> new TutorialDialog(parent).setVisible(true));
 
         setLocationRelativeTo(parent);
     }
 
     private void refreshExamList() {
-        allExamsCache = DataManager.listSavedExams();
+        allExamsCache = DataManager.listSavedExams(currentClassName);
         applyFilters();
     }
 
@@ -199,7 +199,8 @@ public class StartupDialog extends JDialog {
         List<ExamFileItem> filteredItems = new ArrayList<>();
         for (String name : allExamsCache) {
             if (!name.toLowerCase().contains(keyword)) continue;
-            File f = new File("data/" + name + ".dat");
+            // Đã cập nhật đường dẫn kiểm tra ngày tháng
+            File f = new File("data/classes/" + currentClassName + "/exams/" + name + ".dat");
             if (f.exists()) {
                 long lastModified = f.lastModified();
                 long diffDays = (now - lastModified) / oneDayMs;

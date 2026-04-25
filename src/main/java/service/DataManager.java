@@ -1,14 +1,12 @@
 package service;
 
 import model.ExamSession;
-import javax.swing.JOptionPane;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
 
 public class DataManager {
-    private static final String DATA_DIR = "data/";
-    private static final String TRASH_DIR = "data/trash/";
+    // Thời gian lưu thùng rác: 30 ngày
     private static final long THIRTY_DAYS_MS = 30L * 24 * 60 * 60 * 1000;
 
     public static class TrashedItem {
@@ -27,29 +25,35 @@ public class DataManager {
         }
     }
 
-    public static void saveSession(ExamSession session) {
+    // ==========================================
+    // ============ HỆ THỐNG ĐƯỜNG DẪN MỚI ======
+    // ==========================================
+    private static String getExamDir(String className) { return "data/classes/" + className + "/exams/"; }
+    private static String getTrashDir(String className) { return "data/classes/" + className + "/trash/"; }
+
+    public static void saveSession(ExamSession session, String className) {
         try {
-            File dir = new File(DATA_DIR);
-            if (!dir.exists()) dir.mkdir();
-            ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(DATA_DIR + session.getExamName() + ".dat"));
+            File dir = new File(getExamDir(className));
+            if (!dir.exists()) dir.mkdirs();
+            ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(getExamDir(className) + session.getExamName() + ".dat"));
             oos.writeObject(session);
             oos.close();
         } catch (Exception e) { e.printStackTrace(); }
     }
 
-    public static ExamSession loadSession(String examName) {
+    public static ExamSession loadSession(String examName, String className) {
         try {
-            ObjectInputStream ois = new ObjectInputStream(new FileInputStream(DATA_DIR + examName + ".dat"));
+            ObjectInputStream ois = new ObjectInputStream(new FileInputStream(getExamDir(className) + examName + ".dat"));
             ExamSession session = (ExamSession) ois.readObject();
             ois.close();
             return session;
         } catch (Exception e) { return null; }
     }
 
-    public static List<String> listSavedExams() {
-        cleanupTrash();
+    public static List<String> listSavedExams(String className) {
+        cleanupTrash(className);
         List<String> exams = new ArrayList<>();
-        File dir = new File(DATA_DIR);
+        File dir = new File(getExamDir(className));
         if (dir.exists()) {
             for (File f : dir.listFiles()) {
                 if (f.isFile() && f.getName().endsWith(".dat")) {
@@ -60,21 +64,21 @@ public class DataManager {
         return exams;
     }
 
-    public static void moveToTrash(String examName) {
+    public static void moveToTrash(String examName, String className) {
         try {
-            File trashDir = new File(TRASH_DIR);
+            File trashDir = new File(getTrashDir(className));
             if (!trashDir.exists()) trashDir.mkdirs();
-            File src = new File(DATA_DIR + examName + ".dat");
+            File src = new File(getExamDir(className) + examName + ".dat");
             if (src.exists()) {
-                File dest = new File(TRASH_DIR + examName + ".dat_deleted_" + System.currentTimeMillis());
+                File dest = new File(getTrashDir(className) + examName + ".dat_deleted_" + System.currentTimeMillis());
                 src.renameTo(dest);
             }
         } catch (Exception e) { e.printStackTrace(); }
     }
 
-    public static List<TrashedItem> listTrashedExams() {
+    public static List<TrashedItem> listTrashedExams(String className) {
         List<TrashedItem> trashed = new ArrayList<>();
-        File dir = new File(TRASH_DIR);
+        File dir = new File(getTrashDir(className));
         if (dir.exists()) {
             long now = System.currentTimeMillis();
             for (File f : dir.listFiles()) {
@@ -93,51 +97,51 @@ public class DataManager {
         return trashed;
     }
 
-    public static void restoreFromTrash(String trashFileName) {
-        File src = new File(TRASH_DIR + trashFileName);
+    public static void restoreFromTrash(String trashFileName, String className) {
+        File src = new File(getTrashDir(className) + trashFileName);
         if (!src.exists()) return;
 
         String originalName = trashFileName.split(".dat_deleted_")[0];
         String baseName = originalName;
-        File dest = new File(DATA_DIR + baseName + ".dat");
+        File dest = new File(getExamDir(className) + baseName + ".dat");
 
         int count = 1;
         while (dest.exists()) {
             count++;
             baseName = originalName + " (" + count + ")";
-            dest = new File(DATA_DIR + baseName + ".dat");
+            dest = new File(getExamDir(className) + baseName + ".dat");
         }
 
         if (src.renameTo(dest)) {
-            ExamSession session = loadSession(baseName);
+            ExamSession session = loadSession(baseName, className);
             if (session != null) {
-                session.setExamName(baseName); // ĐÃ CÓ SETTER SAU KHI SỬA BƯỚC 1
-                saveSession(session);
+                session.setExamName(baseName);
+                saveSession(session, className);
             }
         }
     }
 
-    public static void renameExam(String oldName, String newName) {
-        File src = new File(DATA_DIR + oldName + ".dat");
-        File dest = new File(DATA_DIR + newName + ".dat");
+    public static void renameExam(String oldName, String newName, String className) {
+        File src = new File(getExamDir(className) + oldName + ".dat");
+        File dest = new File(getExamDir(className) + newName + ".dat");
         if (src.exists() && !dest.exists()) {
             if (src.renameTo(dest)) {
-                ExamSession session = loadSession(newName);
+                ExamSession session = loadSession(newName, className);
                 if (session != null) {
-                    session.setExamName(newName); // ĐÃ CÓ SETTER SAU KHI SỬA BƯỚC 1
-                    saveSession(session);
+                    session.setExamName(newName);
+                    saveSession(session, className);
                 }
             }
         }
     }
 
-    public static void deletePermanently(String trashFileName) {
-        File target = new File(TRASH_DIR + trashFileName);
+    public static void deletePermanently(String trashFileName, String className) {
+        File target = new File(getTrashDir(className) + trashFileName);
         if (target.exists()) target.delete();
     }
 
-    private static void cleanupTrash() {
-        File dir = new File(TRASH_DIR);
+    private static void cleanupTrash(String className) {
+        File dir = new File(getTrashDir(className));
         if (!dir.exists()) return;
         long now = System.currentTimeMillis();
         for (File f : dir.listFiles()) {
@@ -150,26 +154,6 @@ public class DataManager {
         }
     }
 
-    public static boolean shouldShowTutorial() {
-        try {
-            java.util.Properties props = new java.util.Properties();
-            File f = new File(DATA_DIR + "settings.properties");
-            if (f.exists()) {
-                props.load(new FileInputStream(f));
-                return Boolean.parseBoolean(props.getProperty("showTutorial", "true"));
-            }
-        } catch (Exception e) { }
-        return true;
-    }
-
-    public static void setTutorialPreference(boolean show) {
-        try {
-            java.util.Properties props = new java.util.Properties();
-            File f = new File(DATA_DIR + "settings.properties");
-            props.setProperty("showTutorial", String.valueOf(show));
-            props.store(new FileOutputStream(f), "App Settings");
-        } catch (Exception e) { }
-    }
     // ==========================================
     // ============ QUẢN LÝ LỚP HỌC =============
     // ==========================================
@@ -209,4 +193,6 @@ public class DataManager {
             if (src.exists()) src.renameTo(new File(CLASS_DIR + "trash/" + className + ".dat_deleted_" + System.currentTimeMillis()));
         } catch(Exception e) {}
     }
+
+    public static boolean shouldShowTutorial() { return true; }
 }
