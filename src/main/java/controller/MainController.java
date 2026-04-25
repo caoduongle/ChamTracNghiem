@@ -7,6 +7,12 @@ import javax.swing.table.DefaultTableModel;
 import java.util.ArrayList;
 import java.util.HashMap;
 
+// CÁC THƯ VIỆN KÉO THẢ MỚI ĐƯỢC THÊM VÀO
+import java.awt.dnd.DropTarget;
+import java.awt.dnd.DropTargetDropEvent;
+import java.awt.dnd.DnDConstants;
+import java.awt.datatransfer.DataFlavor;
+
 import model.ExamSession;
 import model.ClassRoom;
 import view.MainView;
@@ -43,7 +49,7 @@ public class MainController {
     }
 
     private void showClassMenu(boolean isFirstRun) {
-        view.setVisible(false); // Luôn tắt nền MainView khi ở menu
+        view.setVisible(false);
         ClassManagementDialog classDialog = new ClassManagementDialog(view);
         classDialog.setVisible(true);
 
@@ -51,23 +57,20 @@ public class MainController {
             this.currentClassRoom = classDialog.getSelectedClass();
             showStartupMenu(isFirstRun);
         } else {
-            // Tắt bằng nút X -> Thoát hoàn toàn
-            System.exit(0);
+            if (isFirstRun) System.exit(0);
         }
     }
 
     private void showStartupMenu(boolean isFirstRun) {
-        view.setVisible(false); // Đảm bảo MainView tàng hình khi đang chọn đề
+        view.setVisible(false);
         StartupDialog startup = new StartupDialog(view, currentClassRoom.className);
         startup.setVisible(true);
 
-        // NẾU BẤM NÚT "TRỞ LẠI CHỌN LỚP"
         if (startup.isGoBackToClass()) {
             showClassMenu(isFirstRun);
             return;
         }
 
-        // NẾU ĐÃ CHỌN ĐƯỢC ĐỀ THI
         if (startup.getSelectedExam() != null) {
             if (startup.isNew()) {
                 currentSession = new ExamSession(startup.getSelectedExam(), null);
@@ -77,7 +80,7 @@ public class MainController {
                 if (currentSession != null) this.currentConfig = currentSession.getConfig();
             }
             view.setTitle("Phần mềm Chấm Thi | Lớp: " + currentClassRoom.className + " | Đề: " + currentSession.getExamName());
-            view.setVisible(true); // CHỈ HIỆN MAINVIEW KHI ĐÃ CHỌN XONG TẤT CẢ
+            view.setVisible(true);
             loadSessionToUI();
         } else {
             System.exit(0);
@@ -126,25 +129,71 @@ public class MainController {
     }
 
     private void initController() {
-        // NÚT TRỞ VỀ MENU ĐÃ ĐƯỢC FIX LẠI CÁCH ẨN GIAO DIỆN
         view.getBtnBackToMenu().addActionListener(e -> {
             int confirm = JOptionPane.showConfirmDialog(view, "Bạn muốn lưu và trở về màn hình Chọn Đề?", "Xác nhận", JOptionPane.YES_NO_OPTION);
             if (confirm == JOptionPane.YES_OPTION) {
                 view.clearView();
-                view.setVisible(false); // Tắt sạch giao diện chấm bài đi
+                view.setVisible(false);
                 this.currentSession = null;
                 this.reportDatabase.clear();
                 this.assignedFiles.clear();
-                showStartupMenu(false); // Bật giao diện Chọn đề lên
+                showStartupMenu(false);
             }
         });
 
         view.getBtnSelectFolder().addActionListener(e -> {
-            JOptionPane.showMessageDialog(view, "Hãy CLICK ĐÚP CHUỘT vào tên học sinh trong bảng để gán ảnh bài làm!", "Hướng dẫn", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(view, "Hãy CLICK ĐÚP CHUỘT vào tên học sinh trong bảng để kéo thả ảnh! \n\nMẸO: Bạn cũng có thể bôi đen nhiều ảnh rồi kéo thẳng vào bảng này để tự động gán theo STT.", "Hướng dẫn Kéo Thả", JOptionPane.INFORMATION_MESSAGE);
         });
 
         view.getBtnDeleteResult().addActionListener(e -> deleteSelectedReport());
         view.getCbxSortResults().addActionListener(e -> refreshTable());
+
+        // ==========================================================
+        // 1. SỰ KIỆN KÉO THẢ HÀNG LOẠT TRỰC TIẾP LÊN BẢNG (MASS DROP)
+        // ==========================================================
+        view.getTblResults().setDropTarget(new DropTarget() {
+            public synchronized void drop(DropTargetDropEvent evt) {
+                try {
+                    evt.acceptDrop(DnDConstants.ACTION_COPY);
+                    List<File> droppedFiles = (List<File>) evt.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
+                    if (droppedFiles.isEmpty()) return;
+
+                    // TRƯỜNG HỢP 1: Kéo thả duy nhất 1 file vào 1 hàng cụ thể
+                    if (droppedFiles.size() == 1) {
+                        Point p = evt.getLocation();
+                        int row = view.getTblResults().rowAtPoint(p);
+                        if (row != -1) {
+                            String low = droppedFiles.get(0).getName().toLowerCase();
+                            if (low.endsWith(".jpg") || low.endsWith(".png")) {
+                                String stt = currentRowStts.get(row);
+                                assignedFiles.put(stt, droppedFiles.get(0));
+                                refreshTable();
+                                return;
+                            }
+                        }
+                    }
+
+                    // TRƯỜNG HỢP 2: Kéo thả nhiều file -> Tự động dò STT trên tên file (VD: 1.jpg -> gán cho STT 1)
+                    int autoCount = 0;
+                    for (File file : droppedFiles) {
+                        String low = file.getName().toLowerCase();
+                        if (low.endsWith(".jpg") || low.endsWith(".png")) {
+                            String rawName = file.getName().substring(0, file.getName().lastIndexOf('.'));
+                            if (currentRowStts.contains(rawName)) {
+                                assignedFiles.put(rawName, file);
+                                autoCount++;
+                            }
+                        }
+                    }
+                    refreshTable();
+                    if (autoCount > 0) {
+                        view.setStatusMessage("Đã gán tự động " + autoCount + " bài thi dựa theo STT.");
+                    } else if (droppedFiles.size() > 1) {
+                        JOptionPane.showMessageDialog(view, "Không có file nào khớp với STT của lớp này (VD: file 1.jpg sẽ tự gán cho STT 1).");
+                    }
+                } catch (Exception ex) { ex.printStackTrace(); }
+            }
+        });
 
         view.getTblResults().addMouseListener(new MouseAdapter() {
             @Override
@@ -189,19 +238,72 @@ public class MainController {
                     "Tùy chọn", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
 
             if (choice == 0) showWrongAnswersDialog(stt);
-            else if (choice == 1) selectImageForStudent(stt, name);
+            else if (choice == 1) openDragAndDropDialog(stt, name);
         } else {
-            selectImageForStudent(stt, name);
+            openDragAndDropDialog(stt, name);
         }
     }
 
-    private void selectImageForStudent(String stt, String name) {
-        JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("Chọn ảnh bài làm cho học sinh: " + name);
-        if (chooser.showOpenDialog(view) == JFileChooser.APPROVE_OPTION) {
-            assignedFiles.put(stt, chooser.getSelectedFile());
-            refreshTable();
-        }
+    // ==========================================================
+    // 2. BẢNG GIAO DIỆN KÉO THẢ RIÊNG CHO TỪNG HỌC SINH
+    // ==========================================================
+    private void openDragAndDropDialog(String stt, String name) {
+        JDialog dropDialog = new JDialog(view, "Gán ảnh bài làm - STT " + stt + ": " + name, true);
+        dropDialog.setSize(500, 350);
+        dropDialog.setLayout(new BorderLayout(10, 10));
+
+        JPanel pnlDrop = new JPanel(new BorderLayout());
+        pnlDrop.setBackground(new Color(240, 248, 255)); // Màu nền xanh nhạt chuyên nghiệp
+        pnlDrop.setBorder(BorderFactory.createDashedBorder(Color.GRAY, 3, 5, 2, true)); // Viền đứt nét
+
+        JLabel lblGuide = new JLabel("<html><center><font size='5' color='#0066cc'><b>KÉO THẢ ẢNH VÀO ĐÂY</b></font><br><br>hoặc <u>Click</u> để mở thư mục</center></html>", SwingConstants.CENTER);
+        pnlDrop.add(lblGuide, BorderLayout.CENTER);
+
+        // NẾU CLICK -> Mở FileChooser chọn truyền thống
+        pnlDrop.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                JFileChooser chooser = new JFileChooser();
+                chooser.setDialogTitle("Chọn ảnh bài làm cho học sinh: " + name);
+                if (chooser.showOpenDialog(dropDialog) == JFileChooser.APPROVE_OPTION) {
+                    assignedFiles.put(stt, chooser.getSelectedFile());
+                    refreshTable();
+                    dropDialog.dispose();
+                }
+            }
+        });
+
+        // NẾU KÉO THẢ VÀO KHU VỰC NÀY -> Nhận file
+        pnlDrop.setDropTarget(new DropTarget() {
+            public synchronized void drop(DropTargetDropEvent evt) {
+                try {
+                    evt.acceptDrop(DnDConstants.ACTION_COPY);
+                    List<File> droppedFiles = (List<File>) evt.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
+                    if (!droppedFiles.isEmpty()) {
+                        File file = droppedFiles.get(0);
+                        String low = file.getName().toLowerCase();
+                        if (low.endsWith(".jpg") || low.endsWith(".png")) {
+                            assignedFiles.put(stt, file);
+                            refreshTable();
+                            dropDialog.dispose();
+                        } else {
+                            JOptionPane.showMessageDialog(dropDialog, "Vui lòng kéo file định dạng ảnh (.jpg, .png)!");
+                        }
+                    }
+                } catch (Exception ex) { ex.printStackTrace(); }
+            }
+        });
+
+        dropDialog.add(pnlDrop, BorderLayout.CENTER);
+
+        JPanel pnlBottom = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        JButton btnClose = new JButton("Hủy bỏ");
+        btnClose.addActionListener(e -> dropDialog.dispose());
+        pnlBottom.add(btnClose);
+        dropDialog.add(pnlBottom, BorderLayout.SOUTH);
+
+        dropDialog.setLocationRelativeTo(view);
+        dropDialog.setVisible(true);
     }
 
     private void saveExcel(String defaultName, int type) {
@@ -212,12 +314,8 @@ public class MainController {
                 String path = fileChooser.getSelectedFile().getAbsolutePath();
                 if (!path.endsWith(".xlsx")) path += ".xlsx";
 
-                // GỌI HÀM MỚI BÊN EXCEL SERVICE
-                if (type == 1) {
-                    service.ExcelService.exportExamScoreTable(currentClassRoom, currentSession, path);
-                } else {
-                    service.ExcelService.exportAnswerKey(currentConfig, path);
-                }
+                if (type == 1) service.ExcelService.exportExamScoreTable(currentClassRoom, currentSession, path);
+                else service.ExcelService.exportAnswerKey(currentConfig, path);
 
                 JOptionPane.showMessageDialog(view, "Xuất file thành công!");
             } catch (Exception ex) {
@@ -226,6 +324,7 @@ public class MainController {
             }
         }
     }
+
     private void deleteSelectedReport() {
         int row = view.getTblResults().getSelectedRow();
         if (row == -1) return;
