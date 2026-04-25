@@ -46,7 +46,6 @@ public class ClassManagementDialog extends JDialog {
 
         loadClasses();
 
-        // 1. TẠO LỚP MỚI
         btnNew.addActionListener(e -> {
             String name = JOptionPane.showInputDialog(this, "Nhập tên lớp mới (VD: 10A1):");
             if (name == null || name.trim().isEmpty()) return;
@@ -63,7 +62,6 @@ public class ClassManagementDialog extends JDialog {
             } catch(Exception ex) { JOptionPane.showMessageDialog(this, "Sĩ số phải là số nguyên!"); }
         });
 
-        // 2. CHỌN LỚP ĐỂ CHẤM
         btnOpen.addActionListener(e -> {
             int r = tblClasses.getSelectedRow();
             if (r != -1) {
@@ -72,7 +70,6 @@ public class ClassManagementDialog extends JDialog {
             } else JOptionPane.showMessageDialog(this, "Vui lòng chọn một lớp trong bảng!");
         });
 
-        // 3. SỬA SĨ SỐ VÀ DANH SÁCH
         btnEdit.addActionListener(e -> {
             int r = tblClasses.getSelectedRow();
             if (r != -1) {
@@ -89,7 +86,6 @@ public class ClassManagementDialog extends JDialog {
             } else JOptionPane.showMessageDialog(this, "Vui lòng chọn lớp cần sửa!");
         });
 
-        // 4. XÓA LỚP
         btnDel.addActionListener(e -> {
             int r = tblClasses.getSelectedRow();
             if (r != -1) {
@@ -101,7 +97,12 @@ public class ClassManagementDialog extends JDialog {
             } else JOptionPane.showMessageDialog(this, "Vui lòng chọn lớp cần xóa!");
         });
 
-        btnTrash.addActionListener(e -> JOptionPane.showMessageDialog(this, "Tính năng xem thùng rác lớp học đang được phát triển."));
+        // ĐÃ CẬP NHẬT: KẾT NỐI VỚI CLASS TRASH DIALOG
+        btnTrash.addActionListener(e -> {
+            new ClassTrashDialog(this).setVisible(true);
+            loadClasses(); // Load lại danh sách lớp sau khi đóng thùng rác (phòng trường hợp vừa khôi phục)
+        });
+
         setLocationRelativeTo(parent);
     }
 
@@ -116,9 +117,7 @@ public class ClassManagementDialog extends JDialog {
     public ClassRoom getSelectedClass() { return selectedClass; }
 }
 
-// ========================================================
-// HỘP THOẠI NHẬP/SỬA DANH SÁCH & SĨ SỐ HỌC SINH
-// ========================================================
+// ... Giữ nguyên phần ClassEditorDialog như trước ...
 class ClassEditorDialog extends JDialog {
     private ClassRoom cr;
     private boolean saved = false;
@@ -181,7 +180,6 @@ class ClassEditorDialog extends JDialog {
             } catch(Exception ex) { JOptionPane.showMessageDialog(this, "Sĩ số phải là số!"); }
         });
 
-        // ---------------- THÊM NÚT XUẤT BẢNG ĐIỂM TỔNG TẠI ĐÂY ----------------
         JPanel pnlBottom = new JPanel(new BorderLayout());
         pnlBottom.add(new JLabel(" Gợi ý: Hãy đặt tên file ảnh chụp là '1.jpg' cho học sinh STT 1."), BorderLayout.NORTH);
 

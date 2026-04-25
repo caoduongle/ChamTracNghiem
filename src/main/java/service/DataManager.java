@@ -25,9 +25,6 @@ public class DataManager {
         }
     }
 
-    // ==========================================
-    // ============ HỆ THỐNG ĐƯỜNG DẪN MỚI ======
-    // ==========================================
     private static String getExamDir(String className) { return "data/classes/" + className + "/exams/"; }
     private static String getTrashDir(String className) { return "data/classes/" + className + "/trash/"; }
 
@@ -84,7 +81,7 @@ public class DataManager {
             for (File f : dir.listFiles()) {
                 if (f.getName().contains(".dat_deleted_")) {
                     try {
-                        String[] parts = f.getName().split(".dat_deleted_");
+                        String[] parts = f.getName().split("\\.dat_deleted_");
                         long deleteTime = Long.parseLong(parts[1]);
                         long elapsed = now - deleteTime;
                         int daysLeft = (int) ((THIRTY_DAYS_MS - elapsed) / (24 * 60 * 60 * 1000));
@@ -101,7 +98,9 @@ public class DataManager {
         File src = new File(getTrashDir(className) + trashFileName);
         if (!src.exists()) return;
 
-        String originalName = trashFileName.split(".dat_deleted_")[0];
+        long originalTime = src.lastModified();
+
+        String originalName = trashFileName.split("\\.dat_deleted_")[0];
         String baseName = originalName;
         File dest = new File(getExamDir(className) + baseName + ".dat");
 
@@ -118,6 +117,7 @@ public class DataManager {
                 session.setExamName(baseName);
                 saveSession(session, className);
             }
+            dest.setLastModified(originalTime);
         }
     }
 
@@ -125,12 +125,14 @@ public class DataManager {
         File src = new File(getExamDir(className) + oldName + ".dat");
         File dest = new File(getExamDir(className) + newName + ".dat");
         if (src.exists() && !dest.exists()) {
+            long originalTime = src.lastModified();
             if (src.renameTo(dest)) {
                 ExamSession session = loadSession(newName, className);
                 if (session != null) {
                     session.setExamName(newName);
                     saveSession(session, className);
                 }
+                dest.setLastModified(originalTime);
             }
         }
     }
@@ -147,7 +149,7 @@ public class DataManager {
         for (File f : dir.listFiles()) {
             if (f.getName().contains(".dat_deleted_")) {
                 try {
-                    long deleteTime = Long.parseLong(f.getName().split(".dat_deleted_")[1]);
+                    long deleteTime = Long.parseLong(f.getName().split("\\.dat_deleted_")[1]);
                     if (now - deleteTime > THIRTY_DAYS_MS) f.delete();
                 } catch (Exception ignored) {}
             }
@@ -158,6 +160,7 @@ public class DataManager {
     // ============ QUẢN LÝ LỚP HỌC =============
     // ==========================================
     private static final String CLASS_DIR = "data/classes/";
+    private static final String CLASS_TRASH_DIR = "data/classes/trash/";
 
     public static void saveClass(model.ClassRoom cr) {
         try {
@@ -176,6 +179,7 @@ public class DataManager {
     }
 
     public static List<String> listClasses() {
+        cleanupClassTrash(); // Dọn rác lớp học
         List<String> list = new ArrayList<>();
         File dir = new File(CLASS_DIR);
         if (dir.exists()) {
@@ -186,12 +190,80 @@ public class DataManager {
         return list;
     }
 
+    // Đưa lớp vào thùng rác
     public static void deleteClass(String className) {
         try {
-            File trashDir = new File(CLASS_DIR + "trash/"); if (!trashDir.exists()) trashDir.mkdirs();
+            File trashDir = new File(CLASS_TRASH_DIR); if (!trashDir.exists()) trashDir.mkdirs();
             File src = new File(CLASS_DIR + className + ".dat");
-            if (src.exists()) src.renameTo(new File(CLASS_DIR + "trash/" + className + ".dat_deleted_" + System.currentTimeMillis()));
+            if (src.exists()) src.renameTo(new File(CLASS_TRASH_DIR + className + ".dat_deleted_" + System.currentTimeMillis()));
         } catch(Exception e) {}
+    }
+
+    // --- CÁC HÀM MỚI CHO THÙNG RÁC LỚP HỌC ---
+    public static List<TrashedItem> listTrashedClasses() {
+        List<TrashedItem> trashed = new ArrayList<>();
+        File dir = new File(CLASS_TRASH_DIR);
+        if (dir.exists()) {
+            long now = System.currentTimeMillis();
+            for (File f : dir.listFiles()) {
+                if (f.getName().contains(".dat_deleted_")) {
+                    try {
+                        String[] parts = f.getName().split("\\.dat_deleted_");
+                        long deleteTime = Long.parseLong(parts[1]);
+                        long elapsed = now - deleteTime;
+                        int daysLeft = (int) ((THIRTY_DAYS_MS - elapsed) / (24 * 60 * 60 * 1000));
+                        if (daysLeft < 0) daysLeft = 0;
+                        trashed.add(new TrashedItem(parts[0], f.getName(), daysLeft, f.lastModified(), deleteTime));
+                    } catch (Exception e) { }
+                }
+            }
+        }
+        return trashed;
+    }
+
+    public static void restoreClassFromTrash(String trashFileName) {
+        File src = new File(CLASS_TRASH_DIR + trashFileName);
+        if (!src.exists()) return;
+
+        long originalTime = src.lastModified();
+        String originalName = trashFileName.split("\\.dat_deleted_")[0];
+        String baseName = originalName;
+        File dest = new File(CLASS_DIR + baseName + ".dat");
+
+        int count = 1;
+        while (dest.exists()) {
+            count++;
+            baseName = originalName + " (" + count + ")";
+            dest = new File(CLASS_DIR + baseName + ".dat");
+        }
+
+        if (src.renameTo(dest)) {
+            model.ClassRoom cr = loadClass(baseName);
+            if (cr != null) {
+                cr.className = baseName; // Cập nhật tên lớp bên trong object nếu bị trùng tên
+                saveClass(cr);
+            }
+            dest.setLastModified(originalTime); // Giữ nguyên ngày tạo
+        }
+    }
+
+    public static void deleteClassPermanently(String trashFileName) {
+        File target = new File(CLASS_TRASH_DIR + trashFileName);
+        if (target.exists()) target.delete();
+    }
+
+    private static void cleanupClassTrash() {
+        File dir = new File(CLASS_TRASH_DIR);
+        if (!dir.exists()) return;
+        long now = System.currentTimeMillis();
+        for (File f : dir.listFiles()) {
+            if (f.getName().contains(".dat_deleted_")) {
+                try {
+                    long deleteTime = Long.parseLong(f.getName().split("\\.dat_deleted_")[1]);
+                    if (now - deleteTime > THIRTY_DAYS_MS) f.delete();
+                } catch (Exception ignored) {}
+            }
+        }
     }
 
     public static boolean shouldShowTutorial() { return true; }
