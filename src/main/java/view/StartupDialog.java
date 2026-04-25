@@ -17,17 +17,16 @@ import java.util.List;
 public class StartupDialog extends JDialog {
     private JTable tblExams;
     private DefaultTableModel tableModel;
-    private JButton btnNew, btnOpen, btnDelete, btnTrash, btnTutorial, btnRename;
+    private JButton btnNew, btnOpen, btnDelete, btnTrash, btnTutorial, btnRename, btnBackToClass;
     private String selectedExam = null;
     private boolean isNew = false;
+    private boolean goBackToClass = false; // Cờ hiệu quay lại lớp
 
     private JTextField txtSearch;
     private JComboBox<String> cbxDateFilter;
     private JComboBox<String> cbxSort;
     private JSpinner spinFromDate, spinToDate;
     private List<String> allExamsCache;
-
-    // BIẾN MỚI LƯU TÊN LỚP
     private String currentClassName;
 
     private class ExamFileItem {
@@ -36,7 +35,6 @@ public class StartupDialog extends JDialog {
         ExamFileItem(String name, long time) { this.name = name; this.lastModified = time; }
     }
 
-    // CẬP NHẬT CONSTRUCTOR TRUYỀN TÊN LỚP VÀO
     public StartupDialog(JFrame parent, String className) {
         super(parent, "Quản lý đề thi - Lớp: " + className, true);
         this.currentClassName = className;
@@ -96,7 +94,8 @@ public class StartupDialog extends JDialog {
         JPanel pnlBottomControls = new JPanel(new BorderLayout(0, 5));
         pnlBottomControls.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
-        JPanel pnlBtns = new JPanel(new GridLayout(3, 2, 5, 5));
+        // Đổi thành GridLayout 4x2 để nhét thêm nút
+        JPanel pnlBtns = new JPanel(new GridLayout(4, 2, 5, 5));
         btnNew = new JButton("Chấm đề mới");
         btnOpen = new JButton("Mở đề cũ");
         btnRename = new JButton("✏ Đổi tên đề");
@@ -104,9 +103,14 @@ public class StartupDialog extends JDialog {
         btnTrash = new JButton("🗑 Thùng rác");
         btnTutorial = new JButton("Hướng dẫn");
 
+        btnBackToClass = new JButton("⬅ Trở lại Chọn Lớp");
+        btnBackToClass.setForeground(new Color(200, 50, 0));
+
         pnlBtns.add(btnNew); pnlBtns.add(btnOpen);
         pnlBtns.add(btnRename); pnlBtns.add(btnDelete);
         pnlBtns.add(btnTrash); pnlBtns.add(btnTutorial);
+        pnlBtns.add(btnBackToClass);
+        pnlBtns.add(new JLabel("")); // Cột trống cho đẹp đội hình
 
         pnlBottomControls.add(pnlBtns, BorderLayout.CENTER);
         add(pnlBottomControls, BorderLayout.SOUTH);
@@ -138,9 +142,7 @@ public class StartupDialog extends JDialog {
             if (row != -1) {
                 selectedExam = tblExams.getValueAt(row, 0).toString();
                 isNew = false; dispose();
-            } else {
-                JOptionPane.showMessageDialog(this, "Vui lòng chọn một đề thi!");
-            }
+            } else JOptionPane.showMessageDialog(this, "Vui lòng chọn một đề thi!");
         });
 
         btnRename.addActionListener(e -> {
@@ -152,9 +154,7 @@ public class StartupDialog extends JDialog {
                     DataManager.renameExam(oldName, newName.trim(), currentClassName);
                     refreshExamList();
                 }
-            } else {
-                JOptionPane.showMessageDialog(this, "Vui lòng chọn đề thi cần đổi tên!");
-            }
+            } else JOptionPane.showMessageDialog(this, "Vui lòng chọn đề thi cần đổi tên!");
         });
 
         btnDelete.addActionListener(e -> {
@@ -169,6 +169,12 @@ public class StartupDialog extends JDialog {
 
         btnTrash.addActionListener(e -> {
             new TrashDialog(this, currentClassName).setVisible(true); refreshExamList();
+        });
+
+        // SỰ KIỆN QUAY LẠI LỚP
+        btnBackToClass.addActionListener(e -> {
+            goBackToClass = true;
+            dispose();
         });
 
         setLocationRelativeTo(parent);
@@ -199,7 +205,6 @@ public class StartupDialog extends JDialog {
         List<ExamFileItem> filteredItems = new ArrayList<>();
         for (String name : allExamsCache) {
             if (!name.toLowerCase().contains(keyword)) continue;
-            // Đã cập nhật đường dẫn kiểm tra ngày tháng
             File f = new File("data/classes/" + currentClassName + "/exams/" + name + ".dat");
             if (f.exists()) {
                 long lastModified = f.lastModified();
@@ -232,4 +237,5 @@ public class StartupDialog extends JDialog {
 
     public String getSelectedExam() { return selectedExam; }
     public boolean isNew() { return isNew; }
+    public boolean isGoBackToClass() { return goBackToClass; }
 }

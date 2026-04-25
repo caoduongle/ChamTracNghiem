@@ -43,7 +43,7 @@ public class MainController {
     }
 
     private void showClassMenu(boolean isFirstRun) {
-        view.setVisible(false);
+        view.setVisible(false); // Luôn tắt nền MainView khi ở menu
         ClassManagementDialog classDialog = new ClassManagementDialog(view);
         classDialog.setVisible(true);
 
@@ -51,29 +51,36 @@ public class MainController {
             this.currentClassRoom = classDialog.getSelectedClass();
             showStartupMenu(isFirstRun);
         } else {
-            if (isFirstRun) System.exit(0);
+            // Tắt bằng nút X -> Thoát hoàn toàn
+            System.exit(0);
         }
     }
 
     private void showStartupMenu(boolean isFirstRun) {
-        // TRUYỀN TÊN LỚP VÀO ĐÂY
+        view.setVisible(false); // Đảm bảo MainView tàng hình khi đang chọn đề
         StartupDialog startup = new StartupDialog(view, currentClassRoom.className);
         startup.setVisible(true);
 
+        // NẾU BẤM NÚT "TRỞ LẠI CHỌN LỚP"
+        if (startup.isGoBackToClass()) {
+            showClassMenu(isFirstRun);
+            return;
+        }
+
+        // NẾU ĐÃ CHỌN ĐƯỢC ĐỀ THI
         if (startup.getSelectedExam() != null) {
             if (startup.isNew()) {
                 currentSession = new ExamSession(startup.getSelectedExam(), null);
                 this.currentConfig = null;
             } else {
-                // LOAD CŨNG TRUYỀN TÊN LỚP VÀO
                 currentSession = DataManager.loadSession(startup.getSelectedExam(), currentClassRoom.className);
                 if (currentSession != null) this.currentConfig = currentSession.getConfig();
             }
             view.setTitle("Phần mềm Chấm Thi | Lớp: " + currentClassRoom.className + " | Đề: " + currentSession.getExamName());
-            view.setVisible(true);
+            view.setVisible(true); // CHỈ HIỆN MAINVIEW KHI ĐÃ CHỌN XONG TẤT CẢ
             loadSessionToUI();
         } else {
-            showClassMenu(isFirstRun);
+            System.exit(0);
         }
     }
 
@@ -119,14 +126,16 @@ public class MainController {
     }
 
     private void initController() {
+        // NÚT TRỞ VỀ MENU ĐÃ ĐƯỢC FIX LẠI CÁCH ẨN GIAO DIỆN
         view.getBtnBackToMenu().addActionListener(e -> {
-            int confirm = JOptionPane.showConfirmDialog(view, "Bạn muốn trở về màn hình Chọn Đề/Lớp?", "Xác nhận", JOptionPane.YES_NO_OPTION);
+            int confirm = JOptionPane.showConfirmDialog(view, "Bạn muốn lưu và trở về màn hình Chọn Đề?", "Xác nhận", JOptionPane.YES_NO_OPTION);
             if (confirm == JOptionPane.YES_OPTION) {
                 view.clearView();
+                view.setVisible(false); // Tắt sạch giao diện chấm bài đi
                 this.currentSession = null;
                 this.reportDatabase.clear();
                 this.assignedFiles.clear();
-                showStartupMenu(false);
+                showStartupMenu(false); // Bật giao diện Chọn đề lên
             }
         });
 
@@ -158,7 +167,6 @@ public class MainController {
                 this.currentConfig = dialog.getExamConfig();
                 if (currentSession != null) {
                     currentSession.setConfig(this.currentConfig);
-                    // SAVE CÓ TRUYỀN TÊN LỚP
                     DataManager.saveSession(currentSession, currentClassRoom.className);
                 }
                 dialog.dispose();
@@ -230,7 +238,6 @@ public class MainController {
 
             if (currentSession != null) {
                 currentSession.getReports().removeIf(r -> r.studentId.equals(stt));
-                // XÓA THÌ PHẢI LƯU LẠI
                 service.DataManager.saveSession(currentSession, currentClassRoom.className);
             }
             refreshTable();
@@ -356,7 +363,6 @@ public class MainController {
                             newReport.statusMessage = "Thành công";
 
                             try {
-                                // TẠO THƯ MỤC ẢNH RIÊNG CHO LỚP
                                 File imageDir = new File("data/classes/" + currentClassRoom.className + "/images/" + currentSession.getExamName());
                                 if (!imageDir.exists()) imageDir.mkdirs();
 
@@ -378,7 +384,6 @@ public class MainController {
                             if (currentSession != null) {
                                 currentSession.getReports().removeIf(r -> r.studentId.equals(stt));
                                 currentSession.addReport(newReport);
-                                // CHẤM XONG LƯU VÀO FOLDER CỦA LỚP
                                 service.DataManager.saveSession(currentSession, currentClassRoom.className);
                             }
                             publish(new Object[]{"UPDATE", stt});

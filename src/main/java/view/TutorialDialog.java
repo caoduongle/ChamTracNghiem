@@ -92,7 +92,7 @@ public class TutorialDialog extends JDialog {
 
     private void savePrefAndClose() {
         // Nếu tích vào ô "Không hiện lại" -> lưu false, ngược lại lưu true
-        DataManager.setTutorialPreference(!chkDoNotShow.isSelected());
-        dispose();
+       // DataManager.setTutorialPreference(!chkDoNotShow.isSelected());
+      //  dispose();
     }
 }
