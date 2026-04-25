@@ -41,11 +41,12 @@ build/
 ### Mac OS ###
 .DS_Store
 
-# Dữ liệu người dùng (Tuyệt đối không đẩy lên để bảo mật)
-data/*.dat
+# --- Dữ liệu nội bộ của ứng dụng ---
+data/classes/
 data/trash/
 data/images/
-data/settings.properties
+*.dat
+*.dat_deleted_*
 
 # Chỉ giữ lại ảnh hướng dẫn
 !data/tutorial/
