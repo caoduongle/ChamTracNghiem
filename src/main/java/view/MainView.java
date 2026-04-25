@@ -14,6 +14,8 @@ public class MainView extends JFrame {
     private JTable tblResults;
     private DefaultTableModel tableModel;
     private JLabel lblStatus;
+    private JButton btnDeleteResult;
+    private JComboBox<String> cbxSortResults;
 
     public MainView() {
         setTitle("Phần mềm Chấm Trắc Nghiệm - Team N7");
@@ -33,6 +35,18 @@ public class MainView extends JFrame {
         btnSetAnswerKey = new JButton("2. Cài đặt đáp án");
         btnStartGrading = new JButton("3. Bắt đầu chấm");
 
+        btnDeleteResult = new JButton("❌ Xóa bài chọn");
+        cbxSortResults = new JComboBox<>(new String[]{"Sắp xếp: Mặc định", "Sắp xếp: SBD", "Sắp xếp: Điểm (Cao-Thấp)"});
+
+        panelControl.add(btnBackToMenu);
+        panelControl.add(btnSelectFolder);
+        panelControl.add(btnSetAnswerKey);
+        panelControl.add(btnStartGrading);
+        panelControl.add(new JLabel(" | ")); // Vạch ngăn cách
+        panelControl.add(btnDeleteResult);
+        panelControl.add(cbxSortResults);
+
+        add(panelControl, BorderLayout.NORTH);
         panelControl.add(btnBackToMenu);
         panelControl.add(btnSelectFolder);
         panelControl.add(btnSetAnswerKey);
@@ -90,4 +104,6 @@ public class MainView extends JFrame {
         lblStatus.setText("Trạng thái: Vui lòng chọn đề thi để tiếp tục");
         setTitle("Phần mềm Chấm Trắc Nghiệm - Team N7");
     }
+    public JButton getBtnDeleteResult() { return btnDeleteResult; }
+    public JComboBox<String> getCbxSortResults() { return cbxSortResults; }
 }

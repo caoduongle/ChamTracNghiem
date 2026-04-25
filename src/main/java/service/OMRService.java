@@ -48,31 +48,31 @@ public class OMRService {
         int p3Count = (config != null) ? config.getNumPart3() : 6;
 
         // --- 1. SỐ BÁO DANH & MÃ ĐỀ (Luôn quét cố định) ---
-        results.put("STUDENT_ID", autoColumnScan(thresh, warped, new Rect(818, 98, 230, 345), 6, 10, "SBD", new Scalar(0, 255, 255)));
-        results.put("EXAM_CODE", autoColumnScan(thresh, warped, new Rect(1068, 98, 120, 345), 3, 10, "MaDe", new Scalar(200, 0, 200)));
+        results.put("STUDENT_ID", autoColumnScan(thresh, warped, new Rect(810, 135, 205, 330), 8, 10, "SBD", new Scalar(0, 255, 255)));
+        results.put("EXAM_CODE", autoColumnScan(thresh, warped, new Rect(1043, 135, 105, 325), 4, 10, "MaDe", new Scalar(200, 0, 200)));
 
         // --- 2. PHẦN I (Tính toán số lượng khung và số câu cần quét) ---
-        int[] p1_X = {80, 365, 645, 935};
+        int[] p1_X = {115, 375, 645, 915};
         int p1Boxes = (int) Math.ceil(p1Count / 10.0); // Ví dụ 25 câu -> Quét 3 khung
         for (int i = 0; i < p1Boxes; i++) {
-            Rect colBox = new Rect(p1_X[i], 570, 210, 284);
+            Rect colBox = new Rect(p1_X[i], 580, 195, 269);
             int questionsInThisBox = Math.min(10, p1Count - (i * 10)); // Khung cuối có thể < 10 câu
             results.putAll(autoPart1Scan(thresh, warped, colBox, i * 10, questionsInThisBox));
         }
 
         // --- 3. PHẦN II (1 Câu = 1 Khung -> Quét đúng số lượng câu) ---
-        int[] p2_X = {80, 180, 360, 470, 640, 750, 930, 1035};
+        int[] p2_X = {110, 220, 370, 480, 640, 745, 910, 1005};
         int p2Boxes = Math.min(8, p2Count);
         for (int i = 0; i < p2Boxes; i++) {
-            Rect tableBox = new Rect(p2_X[i], 955, 113, 120);
+            Rect tableBox = new Rect(p2_X[i], 951, 98, 115);
             results.putAll(autoPart2Scan(thresh, warped, tableBox, i));
         }
 
         // --- 4. PHẦN III (1 Câu = 1 Khung -> Quét đúng số lượng câu) ---
-        int[] p3_X = {70, 245, 430, 610, 793, 970};
+        int[] p3_X = {110, 282, 441, 610, 776, 950};
         int p3Boxes = Math.min(6, p3Count);
         for (int i = 0; i < p3Boxes; i++) {
-            Rect qBox = new Rect(p3_X[i], 1190, 160, 345);
+            Rect qBox = new Rect(p3_X[i], 1175, 142, 325);
             String val = scanSmartInterpolationPart3(thresh, warped, qBox);
             results.put("P3_Câu_" + (i + 1), val);
         }
@@ -278,6 +278,7 @@ public class OMRService {
         }
         colClusters.add(currentCol);
 
+        // --- 1. NỘI SUY CỘT THÔNG MINH (TRÁI/PHẢI) ---
         List<Integer> finalXs = new ArrayList<>();
         for (List<Rect> col : colClusters) {
             int sumX = 0;
@@ -286,7 +287,14 @@ public class OMRService {
         }
         while (finalXs.size() < expectedCols) {
             int gap = finalXs.size() > 1 ? (finalXs.get(1) - finalXs.get(0)) : (box.width / expectedCols);
-            finalXs.add(finalXs.get(finalXs.size() - 1) + gap);
+            int spaceLeft = finalXs.get(0);
+            int spaceRight = box.width - finalXs.get(finalXs.size() - 1);
+
+            if (spaceLeft > spaceRight) {
+                finalXs.add(0, finalXs.get(0) - gap); // Thiếu ở trái -> Bù vào trái
+            } else {
+                finalXs.add(finalXs.get(finalXs.size() - 1) + gap); // Thiếu ở phải -> Bù vào phải
+            }
         }
 
         bubbles.sort(Comparator.comparingInt(r -> r.y));
@@ -305,6 +313,7 @@ public class OMRService {
         }
         rowClusters.add(currentRow);
 
+        // --- 2. NỘI SUY HÀNG THÔNG MINH (TRÊN/DƯỚI) ---
         List<Integer> finalYs = new ArrayList<>();
         for (List<Rect> row : rowClusters) {
             int sumY = 0;
@@ -328,12 +337,30 @@ public class OMRService {
                 interpolatedYs.add(actualY);
             }
             while (interpolatedYs.size() < expectedRows) {
-                interpolatedYs.add(interpolatedYs.get(interpolatedYs.size() - 1) + stepY);
+                int spaceTop = interpolatedYs.get(0);
+                int spaceBottom = box.height - interpolatedYs.get(interpolatedYs.size() - 1);
+
+                if (spaceTop > spaceBottom) {
+                    interpolatedYs.add(0, interpolatedYs.get(0) - stepY); // Bù lên trên
+                } else {
+                    interpolatedYs.add(interpolatedYs.get(interpolatedYs.size() - 1) + stepY); // Bù xuống dưới
+                }
             }
             finalYs = interpolatedYs;
         } else if (finalYs.size() < 2) {
             int stepY = box.height / expectedRows;
             while(finalYs.size() < expectedRows) finalYs.add(finalYs.get(finalYs.size() - 1) + stepY);
+        }
+
+        // --- 3. KHÓA RANH GIỚI (CLAMP) CỰC KỲ QUAN TRỌNG ---
+        // Đảm bảo không có tọa độ nào nhảy ra khỏi chiều rộng/chiều cao của box
+        for (int i = 0; i < finalXs.size(); i++) {
+            if (finalXs.get(i) < 10) finalXs.set(i, 10);
+            if (finalXs.get(i) > box.width - 10) finalXs.set(i, box.width - 10);
+        }
+        for (int i = 0; i < finalYs.size(); i++) {
+            if (finalYs.get(i) < 10) finalYs.set(i, 10);
+            if (finalYs.get(i) > box.height - 10) finalYs.set(i, box.height - 10);
         }
 
         for (int c = 0; c < expectedCols; c++) {
@@ -346,6 +373,7 @@ public class OMRService {
             perfectGrid.add(colRects);
         }
 
+        // Vẽ ô bao quanh để dễ debug
         for (int c = 0; c < perfectGrid.size(); c++) {
             List<Rect> col = perfectGrid.get(c);
             if(col.isEmpty()) continue;
@@ -452,8 +480,16 @@ public class OMRService {
                 Imgproc.rectangle(warped, coreRect, new Scalar(255, 255, 0), 1);
                 Imgproc.circle(warped, new Point(coreX + coreW/2.0, coreY + coreH/2.0), 1, new Scalar(0, 0, 255), -1);
 
-                int px = Core.countNonZero(new Mat(thresh, coreRect));
-                if (px > maxPx) { maxPx = px; bestRow = r; }
+                if (coreRect.x >= 0 && coreRect.y >= 0 &&
+                        coreRect.x + coreRect.width < warped.cols() &&
+                        coreRect.y + coreRect.height < warped.rows()) {
+
+                    Imgproc.rectangle(warped, coreRect, new Scalar(255, 255, 0), 1);
+                    Imgproc.circle(warped, new Point(coreX + coreW/2.0, coreY + coreH/2.0), 1, new Scalar(0, 0, 255), -1);
+
+                    int px = Core.countNonZero(new Mat(thresh, coreRect));
+                    if (px > maxPx) { maxPx = px; bestRow = r; }
+                }
             }
             if (maxPx > 15) {
                 if (type.equals("P3")) sb.append(mapP3Row(bestRow));
@@ -493,8 +529,25 @@ public class OMRService {
             if(s<minS){minS=s; tl=p;} if(s>maxS){maxS=s; br=p;}
             if(d1>maxD1){maxD1=d1; tr=p;} if(d2>maxD2){maxD2=d2; bl=p;}
         }
-        Mat m = Imgproc.getPerspectiveTransform(new MatOfPoint2f(tl, tr, br, bl), new MatOfPoint2f(new Point(0,0), new Point(1200,0), new Point(1200,1600), new Point(0,1600)));
-        Mat w = new Mat(); Imgproc.warpPerspective(src, w, m, new Size(1200, 1600));
+
+        // --- LOGIC MỚI: TẠO LỀ (PADDING) ---
+        // Giả sử ảnh gốc của bạn có lề từ mép giấy đến tâm ô đen là khoảng 40 pixel
+        double padX = 40;
+        double padY = 40;
+        double width = 1200;
+        double height = 1600;
+
+        MatOfPoint2f srcPoints = new MatOfPoint2f(tl, tr, br, bl);
+        MatOfPoint2f dstPoints = new MatOfPoint2f(
+                new Point(padX, padY),                         // Top-Left: Lùi vào trong
+                new Point(width - padX, padY),                 // Top-Right
+                new Point(width - padX, height - padY),        // Bottom-Right
+                new Point(padX, height - padY)                 // Bottom-Left
+        );
+
+        Mat m = Imgproc.getPerspectiveTransform(srcPoints, dstPoints);
+        Mat w = new Mat();
+        Imgproc.warpPerspective(src, w, m, new Size(width, height));
         return w;
     }
 
