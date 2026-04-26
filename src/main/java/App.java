@@ -11,6 +11,7 @@ public class App {
             com.formdev.flatlaf.FlatLightLaf.setup();
         }
         // invokeLater đảm bảo giao diện được tạo và cập nhật trên Event Dispatch Thread (EDT),
+        service.UpdateService.checkForUpdates();
         // tránh các lỗi treo UI tiềm ẩn.
         SwingUtilities.invokeLater(() -> {
             MainView view = new MainView();
