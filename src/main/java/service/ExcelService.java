@@ -7,8 +7,11 @@ import model.OMRModels.ExamReport;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
+import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -135,24 +138,40 @@ public class ExcelService {
         workbook.close();
     }
 
-    // 3. XUẤT ĐÁP ÁN
+    // 3. XUẤT ĐÁP ÁN (ĐÃ UPDATE ĐỂ XUẤT ĐẸP VÀ CHUẨN TÊN)
     public static void exportAnswerKey(ExamConfig config, String filePath) throws IOException {
         Workbook workbook = new XSSFWorkbook();
-        Sheet sheet = workbook.createSheet("Đáp Án Chuẩn");
+
+        // Lấy tên file để gán luôn làm tên Sheet trong Excel (cho đồng bộ và đẹp)
+        String fileName = new File(filePath).getName().replace(".xlsx", "");
+        Sheet sheet = workbook.createSheet("Đáp án " + fileName);
 
         Row headerRow = sheet.createRow(0);
-        headerRow.createCell(0).setCellValue("Câu hỏi");
-        headerRow.createCell(1).setCellValue("Đáp án");
+
+        CellStyle headerStyle = workbook.createCellStyle();
+        Font font = workbook.createFont();
+        font.setBold(true);
+        headerStyle.setFont(font);
+
+        Cell c0 = headerRow.createCell(0); c0.setCellValue("Câu hỏi"); c0.setCellStyle(headerStyle);
+        Cell c1 = headerRow.createCell(1); c1.setCellValue("Đáp án chuẩn"); c1.setCellStyle(headerStyle);
 
         int rowIdx = 1;
         Map<String, String> answers = config.getAnswers();
         if (answers != null) {
-            for (Map.Entry<String, String> entry : answers.entrySet()) {
+            // Sắp xếp các câu hỏi cho gọn gàng đẹp mắt theo thứ tự chữ cái/số
+            List<String> sortedKeys = new ArrayList<>(answers.keySet());
+            Collections.sort(sortedKeys);
+
+            for (String key : sortedKeys) {
                 Row row = sheet.createRow(rowIdx++);
-                row.createCell(0).setCellValue(entry.getKey());
-                row.createCell(1).setCellValue(entry.getValue());
+                row.createCell(0).setCellValue(key);
+                row.createCell(1).setCellValue(answers.get(key));
             }
         }
+
+        sheet.autoSizeColumn(0);
+        sheet.autoSizeColumn(1);
 
         try (FileOutputStream fileOut = new FileOutputStream(filePath)) {
             workbook.write(fileOut);

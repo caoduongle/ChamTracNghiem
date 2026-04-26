@@ -40,8 +40,8 @@ public class MainController {
     private Map<String, File> assignedFiles = new HashMap<>();
     private List<String> currentRowStts = new ArrayList<>();
 
-    // Bộ nhớ lưu tạm "Học sinh STT x đang chọn Mã Đề y"
     private Map<String, String> studentExamCodes = new HashMap<>();
+    private SwingWorker<Void, Object[]> gradingWorker; // Biến quản lý tiến trình chấm bài
 
     public MainController(MainView view) {
         this.view = view;
@@ -117,7 +117,6 @@ public class MainController {
         setupTableColumns();
         DefaultTableModel model = (DefaultTableModel) view.getTblResults().getModel();
 
-        // Dừng việc edit nếu bảng đang được chỉnh sửa để tránh crash UI khi sắp xếp
         if (view.getTblResults().isEditing() && view.getTblResults().getCellEditor() != null) {
             view.getTblResults().getCellEditor().stopCellEditing();
         }
@@ -125,7 +124,6 @@ public class MainController {
         model.setRowCount(0);
         currentRowStts.clear();
 
-        // 1. TẠO DANH SÁCH TẠM VÀ SẮP XẾP TRƯỚC KHI VẼ
         List<ClassRoom.Student> sortedStudents = new ArrayList<>(currentClassRoom.students);
         int sortMode = view.getCbxSortResults().getSelectedIndex();
 
@@ -135,31 +133,29 @@ public class MainController {
             model.OMRModels.ExamReport r1 = reportDatabase.get(stt1);
             model.OMRModels.ExamReport r2 = reportDatabase.get(stt2);
 
-            if (sortMode == 1) { // Lựa chọn 1: Theo Điểm (Cao -> Thấp)
+            if (sortMode == 1) {
                 double score1 = r1 != null ? r1.totalScore : -1.0;
                 double score2 = r2 != null ? r2.totalScore : -1.0;
                 if (score1 != score2) {
                     return Double.compare(score2, score1);
                 }
-                return Integer.compare(s1.stt, s2.stt); // Cùng điểm thì xếp theo STT
+                return Integer.compare(s1.stt, s2.stt);
 
-            } else if (sortMode == 2) { // Lựa chọn 2: Trạng thái (Ưu tiên Lỗi lên đầu)
+            } else if (sortMode == 2) {
                 int priority1 = getStatusPriority(stt1, r1);
                 int priority2 = getStatusPriority(stt2, r2);
                 if (priority1 != priority2) {
                     return Integer.compare(priority1, priority2);
                 }
-                return Integer.compare(s1.stt, s2.stt); // Cùng trạng thái thì xếp theo STT
+                return Integer.compare(s1.stt, s2.stt);
             }
 
-            // Mặc định (sortMode == 0): Xếp theo STT tăng dần
             return Integer.compare(s1.stt, s2.stt);
         });
 
-        // 2. ĐỔ DỮ LIỆU ĐÃ SẮP XẾP LÊN BẢNG
         for (ClassRoom.Student student : sortedStudents) {
             String stt = String.valueOf(student.stt);
-            currentRowStts.add(stt); // Danh sách ánh xạ vẫn hoạt động chính xác sau khi sort
+            currentRowStts.add(stt);
 
             model.OMRModels.ExamReport report = reportDatabase.get(stt);
 
@@ -185,21 +181,20 @@ public class MainController {
         }
     }
 
-    // --- HÀM PHỤ TRỢ: CHẤM ĐIỂM ƯU TIÊN TRẠNG THÁI ---
     private int getStatusPriority(String stt, model.OMRModels.ExamReport report) {
         if (report != null && report.statusMessage != null) {
             String status = report.statusMessage;
-            if (status.contains("❌")) return 1; // Nặng nhất: Lỗi tô sai, tô kép -> Lên trên cùng
-            if (status.contains("⚠️")) return 2; // Vừa: Nhắc nhở định dạng, đổi mã chưa chấm
-            if (status.contains("✅")) return 4; // Tốt: Đã chấm thành công -> Đẩy xuống dưới
+            if (status.contains("❌")) return 1;
+            if (status.contains("⚠️")) return 2;
+            if (status.contains("✅")) return 4;
         }
-        if (assignedFiles.containsKey(stt)) return 3; // Chờ chấm -> Giữa
-        return 5; // Chưa có file ảnh nào -> Xuống tận cùng
+        if (assignedFiles.containsKey(stt)) return 3;
+        return 5;
     }
 
     private void initController() {
         view.getTblResults().getModel().addTableModelListener(e -> {
-            if (e.getColumn() == 3) { // Cột 3 là Cột Mã Đề
+            if (e.getColumn() == 3) {
                 int row = e.getFirstRow();
                 if (row != -1 && row < currentRowStts.size()) {
                     String stt = currentRowStts.get(row);
@@ -207,7 +202,6 @@ public class MainController {
 
                     studentExamCodes.put(stt, selectedCode);
 
-                    // [FIX]: Xử lý nếu ô đó đã có điểm
                     model.OMRModels.ExamReport report = reportDatabase.get(stt);
                     if (report != null && selectedCode != null && !selectedCode.equals(report.examCode)) {
                         report.examCode = selectedCode;
@@ -217,9 +211,8 @@ public class MainController {
                             service.DataManager.saveSession(currentSession, currentClassRoom.className);
                         }
 
-                        // Cập nhật trạng thái trực tiếp lên giao diện
                         SwingUtilities.invokeLater(() -> {
-                            view.getTblResults().setValueAt(report.statusMessage, row, 5); // Cột 5 là cột Trạng thái
+                            view.getTblResults().setValueAt(report.statusMessage, row, 5);
                         });
                     }
                 }
@@ -322,9 +315,41 @@ public class MainController {
         });
 
         view.getBtnStartGrading().addActionListener(e -> startGradingProcess());
+
+        // Sự kiện Dừng chấm
+        view.getBtnStopGrading().addActionListener(e -> {
+            if (gradingWorker != null && !gradingWorker.isDone()) {
+                gradingWorker.cancel(true);
+                view.setStatusMessage("Đang dừng tiến trình chấm bài...");
+            }
+        });
+
         view.getBtnExportScores().addActionListener(e -> saveExcel("BangDiem_" + currentSession.getExamName() + ".xlsx", 1));
-        view.getBtnExportConfig().addActionListener(e -> saveExcel("DapAn_" + currentSession.getExamName() + ".xlsx", 2));
-// --- 1. SỰ KIỆN NÚT ĐỔI ĐỀ VÙNG CHỌN ---
+
+        // Sự kiện xuất đáp án chọn theo Mã đề
+        view.getBtnExportConfig().addActionListener(e -> {
+            if (currentConfig == null || currentConfig.getExamCodes().isEmpty()) {
+                JOptionPane.showMessageDialog(view, "Chưa có cấu hình đáp án để xuất!");
+                return;
+            }
+
+            Object[] codes = currentConfig.getExamCodes().toArray();
+            String selectedCode = (String) JOptionPane.showInputDialog(
+                    view,
+                    "Chọn mã đề muốn xuất đáp án:",
+                    "Xuất đáp án chi tiết",
+                    JOptionPane.QUESTION_MESSAGE,
+                    null,
+                    codes,
+                    codes[0]
+            );
+
+            if (selectedCode != null) {
+                currentConfig.setActiveCode(selectedCode);
+                saveExcel(currentSession.getExamName() + "_" + selectedCode + ".xlsx", 2);
+            }
+        });
+
         view.getBtnChangeSelectedCode().addActionListener(e -> {
             int[] selectedRows = view.getTblResults().getSelectedRows();
             if (selectedRows.length == 0) {
@@ -357,10 +382,8 @@ public class MainController {
 
                 for (int row : selectedRows) {
                     String stt = currentRowStts.get(row);
-                    // 1. Cập nhật bộ nhớ tạm
                     studentExamCodes.put(stt, selectedCode);
 
-                    // 2. [FIX]: Nếu học sinh đã có bài, phải cập nhật trực tiếp vào report để không bị ghi đè ngược lại
                     model.OMRModels.ExamReport report = reportDatabase.get(stt);
                     if (report != null) {
                         report.examCode = selectedCode;
@@ -369,17 +392,15 @@ public class MainController {
                     }
                 }
 
-                // Lưu lại dữ liệu nếu có bài thi bị thay đổi
                 if (needsSave && currentSession != null) {
                     service.DataManager.saveSession(currentSession, currentClassRoom.className);
                 }
 
-                refreshTable(); // Làm mới lại bảng
+                refreshTable();
                 view.setStatusMessage("Đã cập nhật mã đề " + selectedCode + " cho " + selectedRows.length + " học sinh.");
             }
         });
 
-        // --- 2. SỰ KIỆN NÚT ĐỔI ĐỀ HÀNG LOẠT (TẤT CẢ) ---
         view.getBtnBulkChangeCode().addActionListener(e -> {
             if (currentConfig == null || currentConfig.getExamCodes().isEmpty()) {
                 JOptionPane.showMessageDialog(view, "Vui lòng cài đặt đáp án và các mã đề trước!");
@@ -737,25 +758,32 @@ public class MainController {
             return;
         }
 
-        SwingWorker<Void, Object[]> worker = new SwingWorker<Void, Object[]>() {
+        gradingWorker = new SwingWorker<Void, Object[]>() {
             @Override
             protected Void doInBackground() throws Exception {
                 view.getBtnBackToMenu().setEnabled(false);
                 view.getBtnStartGrading().setEnabled(false);
                 view.getBtnSetAnswerKey().setEnabled(false);
 
+                // Mở khóa nút Dừng
+                view.getBtnStopGrading().setEnabled(true);
+
                 int totalFiles = assignedFiles.size();
                 int currentCount = 0;
                 publish(new Object[]{"INIT_PROGRESS"});
 
                 for (Map.Entry<String, File> entry : assignedFiles.entrySet()) {
+                    if (isCancelled()) {
+                        break;
+                    }
+
                     currentCount++;
                     String stt = entry.getKey();
                     File file = entry.getValue();
 
                     try {
                         int percent = (currentCount * 100) / totalFiles;
-                        publish(new Object[]{"STATUS", "Đang chấm: " + currentCount + "/" + totalFiles + " bài (STT " + stt + ")...", percent});
+                        publish(new Object[]{"STATUS", "Đang chấm: " + currentCount + "/" + totalFiles + " bài (STT " + stt + ")....", percent});
 
                         String selectedCode = studentExamCodes.getOrDefault(stt, "Mặc định");
                         currentConfig.setActiveCode(selectedCode);
@@ -799,7 +827,7 @@ public class MainController {
                             newReport.studentName = fName;
                             newReport.studentSttFile = stt;
                             newReport.studentClass = currentClassRoom.className;
-                            newReport.examCode = selectedCode; // FIX: LƯU MÃ ĐỀ VÀO KẾT QUẢ
+                            newReport.examCode = selectedCode;
 
                             String baseStatus = "";
                             if (hasError) baseStatus = "❌ Lỗi: " + String.join(", ", errorList);
@@ -872,17 +900,23 @@ public class MainController {
                 view.getBtnBackToMenu().setEnabled(true);
                 view.getBtnStartGrading().setEnabled(true);
                 view.getBtnSetAnswerKey().setEnabled(true);
+                view.getBtnStopGrading().setEnabled(false);
 
                 view.getProgressBar().setVisible(false);
 
                 assignedFiles.clear();
                 refreshTable();
 
-                view.setStatusMessage("Hoàn tất quy trình chấm bài đa mã đề.");
-                JOptionPane.showMessageDialog(view, "Đã chấm xong! Dữ liệu đã được lưu riêng cho lớp " + currentClassRoom.className);
+                if (isCancelled()) {
+                    view.setStatusMessage("Đã dừng chấm bài theo yêu cầu.");
+                    JOptionPane.showMessageDialog(view, "Tiến trình chấm bài đã bị dừng!");
+                } else {
+                    view.setStatusMessage("Hoàn tất quy trình chấm bài đa mã đề.");
+                    JOptionPane.showMessageDialog(view, "Đã chấm xong! Dữ liệu đã được lưu riêng cho lớp " + currentClassRoom.className);
+                }
             }
         };
 
-        worker.execute();
+        gradingWorker.execute();
     }
 }
