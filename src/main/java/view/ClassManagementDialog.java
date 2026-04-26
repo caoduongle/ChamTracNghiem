@@ -21,7 +21,7 @@ public class ClassManagementDialog extends JDialog {
 
     public ClassManagementDialog(JFrame parent) {
         super(parent, "Quản lý Lớp học - Team N7", true);
-        setSize(550, 450);
+        setSize(550, 500); // Tăng chút chiều cao để chứa nút mới
         setLayout(new BorderLayout(5, 5));
 
         String[] cols = {"Tên Lớp", "Sĩ số (Học sinh)"};
@@ -37,7 +37,8 @@ public class ClassManagementDialog extends JDialog {
         pnlList.add(new JScrollPane(tblClasses), BorderLayout.CENTER);
         add(pnlList, BorderLayout.CENTER);
 
-        JPanel pnlBtns = new JPanel(new GridLayout(3, 2, 5, 5));
+        // ĐÃ NÂNG CẤP LÊN GRID 4 HÀNG ĐỂ CHỨA NÚT THỐNG KÊ
+        JPanel pnlBtns = new JPanel(new GridLayout(4, 2, 5, 5));
         pnlBtns.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
         JButton btnNew = new JButton("➕ Tạo lớp mới");
@@ -47,9 +48,15 @@ public class ClassManagementDialog extends JDialog {
         JButton btnDel = new JButton("❌ Xóa lớp");
         JButton btnTrash = new JButton("🗑 Thùng rác lớp học");
 
+        // --- NÚT MỚI: DASHBOARD 1 ---
+        JButton btnClassDashboard = new JButton("📈 Thống kê Tổng quan Lớp");
+        JLabel emptyLabel = new JLabel(""); // Lấp chỗ trống cho đủ lưới 4x2
+
         pnlBtns.add(btnNew); pnlBtns.add(btnOpen);
         pnlBtns.add(btnRename); pnlBtns.add(btnEdit);
         pnlBtns.add(btnDel); pnlBtns.add(btnTrash);
+        pnlBtns.add(btnClassDashboard); pnlBtns.add(emptyLabel);
+
         add(pnlBtns, BorderLayout.SOUTH);
 
         loadClasses();
@@ -121,6 +128,20 @@ public class ClassManagementDialog extends JDialog {
         btnTrash.addActionListener(e -> {
             new ClassTrashDialog(this).setVisible(true);
             loadClasses();
+        });
+
+        // 7. GỌI DASHBOARD 1 (THỐNG KÊ TỔNG QUAN)
+        btnClassDashboard.addActionListener(e -> {
+            int r = tblClasses.getSelectedRow();
+            if (r != -1) {
+                String className = tblClasses.getValueAt(r, 0).toString();
+                ClassRoom targetClass = DataManager.loadClass(className);
+                if (targetClass != null) {
+                    new view.ClassDashboardDialog((JFrame) SwingUtilities.getWindowAncestor(this), targetClass).setVisible(true);
+                }
+            } else {
+                JOptionPane.showMessageDialog(this, "Vui lòng click chọn một lớp trong bảng để xem thống kê!");
+            }
         });
 
         setLocationRelativeTo(parent);
@@ -240,7 +261,6 @@ class ClassEditorDialog extends JDialog {
         pnlBottom.add(btnExport); pnlBottom.add(btnSave);
         add(pnlBottom, BorderLayout.SOUTH);
 
-        // ĐÃ SỬA LỖI Ở ĐÂY: Dùng getParent() thay vì parent
         setLocationRelativeTo(getParent());
     }
 

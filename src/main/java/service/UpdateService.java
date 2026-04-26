@@ -8,7 +8,7 @@ import java.nio.channels.ReadableByteChannel;
 
 public class UpdateService {
     // Phiên bản hiện tại của phần mềm
-    public static final String CURRENT_VERSION = "1.2.0";
+    public static final String CURRENT_VERSION = "1.3.0";
 
     // ĐÃ FIX 1: Dùng link Raw gốc, không có token (Yêu cầu repo GitHub phải là Public)
     private static final String VERSION_URL = "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/version.txt";
@@ -28,7 +28,7 @@ public class UpdateService {
             if (!CURRENT_VERSION.equals(latestVersion)) {
                 int choice = JOptionPane.showConfirmDialog(null,
                         "Đã có phiên bản mới v" + latestVersion + "! Bạn có muốn cập nhật ngay không?\n(Phần mềm sẽ tự động khởi động lại sau khi tải xong)",
-                        "Cập nhật phần mềm Team N7", JOptionPane.YES_NO_OPTION);
+                        "Cập nhật phần mềm", JOptionPane.YES_NO_OPTION);
 
                 if (choice == JOptionPane.YES_OPTION) {
                     downloadAndApplyUpdate(latestVersion); // Truyền version mới vào hàm

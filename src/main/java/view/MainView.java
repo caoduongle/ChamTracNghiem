@@ -16,6 +16,7 @@ public class MainView extends JFrame {
     private JButton btnDeleteResult;
     private JComboBox<String> cbxSortResults;
     private JButton btnExportScores, btnExportConfig;
+    private JButton btnDashboard; // NÚT MỚI THÊM
 
     public MainView() {
         setTitle("Phần mềm Chấm Trắc Nghiệm - Team N7");
@@ -37,6 +38,8 @@ public class MainView extends JFrame {
 
         btnDeleteResult = new JButton("❌ Xóa bài chọn");
         cbxSortResults = new JComboBox<>(new String[]{"Sắp xếp: Mặc định", "Sắp xếp: SBD", "Sắp xếp: Điểm (Cao-Thấp)"});
+
+        btnDashboard = new JButton("📈 Thống kê lớp"); // KHỞI TẠO NÚT
         btnExportScores = new JButton("📊 Xuất Bảng Điểm");
         btnExportConfig = new JButton("📝 Xuất Đáp Án");
 
@@ -47,6 +50,7 @@ public class MainView extends JFrame {
         panelControl.add(new JLabel("  |  ")); // Vạch ngăn cách
         panelControl.add(btnDeleteResult);
         panelControl.add(cbxSortResults);
+        panelControl.add(btnDashboard); // THÊM NÚT VÀO GIAO DIỆN
         panelControl.add(btnExportScores);
         panelControl.add(btnExportConfig);
 
@@ -86,6 +90,7 @@ public class MainView extends JFrame {
     public JComboBox<String> getCbxSortResults() { return cbxSortResults; }
     public JButton getBtnExportScores() { return btnExportScores; }
     public JButton getBtnExportConfig() { return btnExportConfig; }
+    public JButton getBtnDashboard() { return btnDashboard; } // GETTER NÚT MỚI
 
     public void setImagePreview(Icon imageIcon) {
         lblImagePreview.setText("");

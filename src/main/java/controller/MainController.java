@@ -144,6 +144,15 @@ public class MainController {
         view.getBtnDeleteResult().addActionListener(e -> deleteSelectedReport());
         view.getCbxSortResults().addActionListener(e -> refreshTable());
 
+        // --- GẮN SỰ KIỆN NÚT DASHBOARD (ĐỀ THI HIỆN TẠI) ---
+        view.getBtnDashboard().addActionListener(e -> {
+            if (currentSession == null || currentSession.getReports().isEmpty()) {
+                JOptionPane.showMessageDialog(view, "Chưa có bài thi nào được chấm để thống kê!");
+                return;
+            }
+            new view.DashboardDialog(view, currentSession).setVisible(true);
+        });
+
         view.getTblResults().setDropTarget(new DropTarget() {
             public synchronized void drop(DropTargetDropEvent evt) {
                 try {
@@ -421,31 +430,55 @@ public class MainController {
 
         String[] cols = {"Câu hỏi", "Đ/A Học sinh", "Đ/A Chuẩn"};
         DefaultTableModel detailModel = new DefaultTableModel(cols, 0);
-        int wrongCount = 0;
+
+        // LỌC VÀ SẮP XẾP ĐÁP ÁN SAI LOGIC
+        java.util.List<model.OMRModels.AnswerRecord> wrongAnswers = new java.util.ArrayList<>();
         for (model.OMRModels.AnswerRecord rec : report.details) {
-            if (!rec.isCorrect) {
-                detailModel.addRow(new Object[]{rec.questionId, rec.studentAnswer, rec.correctAnswer});
-                wrongCount++;
-            }
+            if (!rec.isCorrect) wrongAnswers.add(rec);
         }
+
+        wrongAnswers.sort((r1, r2) -> {
+            try {
+                String[] p1 = r1.questionId.split("_");
+                String[] p2 = r2.questionId.split("_");
+
+                int part1 = Integer.parseInt(p1[0].replace("P", ""));
+                int part2 = Integer.parseInt(p2[0].replace("P", ""));
+                if (part1 != part2) return Integer.compare(part1, part2);
+
+                int q1 = Integer.parseInt(p1[2]);
+                int q2 = Integer.parseInt(p2[2]);
+                if (q1 != q2) return Integer.compare(q1, q2);
+
+                if (p1.length > 3 && p2.length > 3) {
+                    return p1[3].compareTo(p2[3]);
+                }
+                return 0;
+            } catch (Exception e) {
+                return r1.questionId.compareTo(r2.questionId);
+            }
+        });
+
+        int wrongCount = wrongAnswers.size();
+        for (model.OMRModels.AnswerRecord rec : wrongAnswers) {
+            detailModel.addRow(new Object[]{rec.questionId, rec.studentAnswer, rec.correctAnswer});
+        }
+
         JTable tblDetail = new JTable(detailModel);
         tblDetail.setForeground(Color.RED);
+        tblDetail.setFont(new Font("Arial", Font.PLAIN, 14));
+        tblDetail.setRowHeight(25);
 
         JPanel pnlTable = new JPanel(new BorderLayout());
         pnlTable.add(new JScrollPane(tblDetail), BorderLayout.CENTER);
-        pnlTable.add(new JLabel("  Tổng số ý sai: " + wrongCount, SwingConstants.LEFT), BorderLayout.SOUTH);
+
+        JLabel lblTotalWrong = new JLabel("  Tổng số ý sai: " + wrongCount, SwingConstants.LEFT);
+        lblTotalWrong.setFont(new Font("Arial", Font.BOLD, 14));
+        pnlTable.add(lblTotalWrong, BorderLayout.SOUTH);
 
         JLabel lblImage = new JLabel("", SwingConstants.CENTER);
-
-        // Tự động phân giải đuôi file cho ảnh đã xử lý
         final String pathOriginal = report.imagePath;
-        String processedTemp = pathOriginal;
-        int dotIndex = pathOriginal.lastIndexOf('.');
-        if (dotIndex > 0) {
-            String ext = pathOriginal.substring(dotIndex);
-            processedTemp = pathOriginal.replace(ext, "_processed" + ext);
-        }
-        final String pathProcessed = processedTemp;
+        final String pathProcessed = report.imagePath.replace(".jpg", "_processed.jpg");
 
         java.util.function.Consumer<String> updateImage = (path) -> {
             File f = new File(path);
@@ -518,6 +551,35 @@ public class MainController {
                                 if (String.valueOf(st.stt).equals(stt)) { fName = st.name; break; }
                             }
 
+                            // =========================================================
+                            // BỘ LỌC XỬ LÝ LỖI (Bắt tín hiệu từ OMR để cảnh báo ra UI)
+                            // =========================================================
+                            boolean hasError = false;
+                            boolean hasWarning = false;
+                            List<String> errorList = new ArrayList<>();
+
+                            for (Map.Entry<String, String> entryResult : studentResults.entrySet()) {
+                                String val = entryResult.getValue();
+
+                                // Cắt chữ P1, P2, P3 đi cho thông báo ngắn gọn (VD: Câu_1 tô kép)
+                                String qName = entryResult.getKey().replace("P1_", "").replace("P2_", "").replace("P3_", "");
+
+                                if (val.startsWith("ERR_")) {
+                                    hasError = true;
+                                    errorList.add(qName + " tô kép");
+                                    studentResults.put(entryResult.getKey(), "?"); // Trả về ? để bên trong báo sai gọn gàng
+                                } else if (val.startsWith("WARN_FMT_")) {
+                                    hasWarning = true;
+                                    errorList.add(qName + " sai định dạng");
+                                    studentResults.put(entryResult.getKey(), val.substring(9)); // Cắt chữ cảnh báo để lấy đáp án thật
+                                } else if (val.startsWith("WARN_")) {
+                                    hasWarning = true;
+                                    errorList.add(qName + " mờ");
+                                    studentResults.put(entryResult.getKey(), val.substring(5));
+                                }
+                            }
+                            // =========================================================
+
                             model.OMRModels.ExamReport newReport = service.ScoringEngine.gradeExam(
                                     stt, "AUTO", studentResults, currentConfig
                             );
@@ -526,7 +588,15 @@ public class MainController {
                             newReport.studentName = fName;
                             newReport.studentSttFile = stt;
                             newReport.studentClass = currentClassRoom.className;
-                            newReport.statusMessage = "Thành công";
+
+                            // GẮN TRẠNG THÁI RA BẢNG BÊN NGOÀI
+                            if (hasError) {
+                                newReport.statusMessage = "❌ Lỗi: " + String.join(", ", errorList);
+                            } else if (hasWarning) {
+                                newReport.statusMessage = "⚠️ Nhắc: " + String.join(", ", errorList);
+                            } else {
+                                newReport.statusMessage = "✅ Thành công";
+                            }
 
                             try {
                                 File imageDir = new File("data/classes/" + currentClassRoom.className + "/images/" + currentSession.getExamName());
