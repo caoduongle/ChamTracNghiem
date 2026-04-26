@@ -103,14 +103,24 @@ public class MainController {
 
     private void loadSessionToUI() {
         if (currentSession != null && currentSession.getReports() != null) {
+            // Xóa dữ liệu cũ trong map trước khi nạp mới để tránh lẫn lộn
+            studentExamCodes.clear();
+
             for (model.OMRModels.ExamReport report : currentSession.getReports()) {
                 reportDatabase.put(report.studentId, report);
+
+                // [FIX QUAN TRỌNG]: Đồng bộ lại mã đề đã lưu từ báo cáo vào bộ nhớ đệm
+                if (report.examCode != null) {
+                    studentExamCodes.put(report.studentId, report.examCode);
+                }
             }
         }
-        // [FIX] Cập nhật lại Dropdown mã đề vào bảng mỗi khi tải phiên mới
+
+        // Cập nhật lại danh sách chọn Mã Đề cho bảng
         if (currentConfig != null && currentConfig.getExamCodes() != null) {
             tableManager.updateExamCodeEditor(currentConfig.getExamCodes());
         }
+
         refreshTable();
     }
 
@@ -345,7 +355,17 @@ public class MainController {
             if (choice == 0) {
                 if (report != null) {
                     // [REFACTORED] Gọi Dialog Mới từ thư mục view!
-                    new WrongAnswerDialog(view, report).setVisible(true);
+                    if (choice == 0) {
+                        if (report != null) {
+                            // [REFACTORED] Gọi Dialog Mới, truyền thêm Config và Callback lưu file
+                            new WrongAnswerDialog(view, report, currentConfig, () -> {
+                                refreshTable(); // Cập nhật lại giao diện bảng chính
+                                if (currentSession != null) {
+                                    service.DataManager.saveSession(currentSession, currentClassRoom.className); // Ghi file .dat
+                                }
+                            }).setVisible(true);
+                        } else JOptionPane.showMessageDialog(view, "Bài thi này đang chờ để chấm, chưa có chi tiết để xem!");
+                    }
                 } else JOptionPane.showMessageDialog(view, "Bài thi này đang chờ để chấm, chưa có chi tiết để xem!");
             }
             else if (choice == 1) openDragAndDropDialog(stt, name);
@@ -478,10 +498,43 @@ public class MainController {
         if (view.getTblResults().isEditing() && view.getTblResults().getCellEditor() != null) {
             view.getTblResults().getCellEditor().stopCellEditing();
         }
+
+        // =====================================================================
+        // [TÍNH NĂNG THÔNG MINH]: TỰ ĐỘNG NẠP LẠI BÀI CŨ ĐỂ CHẤM LẠI
+        // =====================================================================
+        boolean hasOldImagesLoaded = false;
+        for (model.ClassRoom.Student student : currentClassRoom.students) {
+            String stt = String.valueOf(student.stt);
+
+            // Nếu học sinh chưa được kéo ảnh mới (assignedFiles trống)
+            // nhưng đã từng có kết quả chấm trước đó (reportDatabase có dữ liệu)
+            if (!assignedFiles.containsKey(stt) && reportDatabase.containsKey(stt)) {
+                model.OMRModels.ExamReport report = reportDatabase.get(stt);
+
+                // Ưu tiên lấy ảnh trong thư mục data của app (imagePath) cho ổn định
+                String path = (report.imagePath != null) ? report.imagePath : report.originalImagePath;
+
+                if (path != null) {
+                    File existingFile = new File(path);
+                    if (existingFile.exists()) {
+                        assignedFiles.put(stt, existingFile); // Nạp vào hàng chờ chấm
+                        hasOldImagesLoaded = true;
+                    }
+                }
+            }
+        }
+
         if (assignedFiles.isEmpty()) {
-            JOptionPane.showMessageDialog(view, "Chưa có ảnh nào được gán! Hãy click đúp vào tên học sinh để gán ảnh trước khi chấm.", "Thiếu thông tin", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(view, "Chưa có ảnh nào được gán (mới hoặc cũ)! Hãy gán ảnh bài làm trước khi chấm.", "Thiếu thông tin", JOptionPane.WARNING_MESSAGE);
             return;
         }
+
+        // Nếu có nạp lại bài cũ, cập nhật bảng để hiện icon chờ ⏳ cho đồng bộ
+        if (hasOldImagesLoaded) {
+            refreshTable();
+        }
+        // =====================================================================
+
         if (currentConfig == null) {
             JOptionPane.showMessageDialog(view, "Vui lòng cài đặt đáp án trước khi chấm!", "Thiếu thông tin", JOptionPane.WARNING_MESSAGE);
             return;
@@ -492,6 +545,7 @@ public class MainController {
                 reportDatabase, assignedFiles, studentExamCodes,
                 () -> refreshTable()
         );
+
         gradingWorker.execute();
     }
 }
