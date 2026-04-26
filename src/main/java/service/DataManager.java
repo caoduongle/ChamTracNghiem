@@ -32,18 +32,16 @@ public class DataManager {
         try {
             File dir = new File(getExamDir(className));
             if (!dir.exists()) dir.mkdirs();
-            ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(getExamDir(className) + session.getExamName() + ".dat"));
-            oos.writeObject(session);
-            oos.close();
+            // [FIX]: Sử dụng Try-with-resources để tự động dọn dẹp bộ nhớ (Memory Leak) ngay cả khi lỗi
+            try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(getExamDir(className) + session.getExamName() + ".dat"))) {
+                oos.writeObject(session);
+            }
         } catch (Exception e) { e.printStackTrace(); }
     }
 
     public static ExamSession loadSession(String examName, String className) {
-        try {
-            ObjectInputStream ois = new ObjectInputStream(new FileInputStream(getExamDir(className) + examName + ".dat"));
-            ExamSession session = (ExamSession) ois.readObject();
-            ois.close();
-            return session;
+        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(getExamDir(className) + examName + ".dat"))) {
+            return (ExamSession) ois.readObject();
         } catch (Exception e) { return null; }
     }
 
@@ -165,16 +163,16 @@ public class DataManager {
     public static void saveClass(model.ClassRoom cr) {
         try {
             File dir = new File(CLASS_DIR); if (!dir.exists()) dir.mkdirs();
-            ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(CLASS_DIR + cr.className + ".dat"));
-            oos.writeObject(cr); oos.close();
+            // [FIX]: Try-with-resources để chống leak
+            try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(CLASS_DIR + cr.className + ".dat"))) {
+                oos.writeObject(cr);
+            }
         } catch (Exception e) { e.printStackTrace(); }
     }
 
     public static model.ClassRoom loadClass(String className) {
-        try {
-            ObjectInputStream ois = new ObjectInputStream(new FileInputStream(CLASS_DIR + className + ".dat"));
-            model.ClassRoom cr = (model.ClassRoom) ois.readObject(); ois.close();
-            return cr;
+        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(CLASS_DIR + className + ".dat"))) {
+            return (model.ClassRoom) ois.readObject();
         } catch (Exception e) { return null; }
     }
 

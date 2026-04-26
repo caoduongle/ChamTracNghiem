@@ -17,6 +17,8 @@ public class MainView extends JFrame {
     private JComboBox<String> cbxSortResults;
     private JButton btnExportScores, btnExportConfig;
     private JButton btnDashboard;
+    private JButton btnBulkChangeCode;
+    private JButton btnChangeSelectedCode;
 
     // --- TÍNH NĂNG MỚI: THANH TIẾN ĐỘ ---
     private JProgressBar progressBar;
@@ -39,11 +41,21 @@ public class MainView extends JFrame {
         btnStartGrading = new JButton("2. Bắt đầu chấm");
 
         btnDeleteResult = new JButton("❌ Xóa bài chọn");
-        cbxSortResults = new JComboBox<>(new String[]{"Sắp xếp: Mặc định", "Sắp xếp: SBD", "Sắp xếp: Điểm (Cao-Thấp)"});
-
+        // [FIX]: Đổi tên các lựa chọn hiển thị trực quan hơn
+        cbxSortResults = new JComboBox<>(new String[]{
+                "Sắp xếp: Theo STT (Mặc định)",
+                "Sắp xếp: Điểm (Cao -> Thấp)",
+                "Sắp xếp: Trạng thái (Lỗi lên đầu)"
+        });
         btnDashboard = new JButton("📈 Thống kê lớp");
         btnExportScores = new JButton("📊 Xuất Bảng Điểm");
         btnExportConfig = new JButton("📝 Xuất Đáp Án");
+
+        btnBulkChangeCode = new JButton("🔄 Đổi đề hàng loạt");
+        btnChangeSelectedCode = new JButton("🎯 Đổi đề vùng chọn");
+        panelControl.add(btnChangeSelectedCode);
+// Thêm vào panelControl sau nút Cài đặt đáp án hoặc Bắt đầu chấm
+        panelControl.add(btnBulkChangeCode);
 
         panelControl.add(btnBackToMenu);
         panelControl.add(btnSetAnswerKey);
@@ -68,10 +80,13 @@ public class MainView extends JFrame {
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return false;
+                // [FIX]: Trả về true cho cột 3 (Mã Đề) để JComboBox đa mã đề có thể click vào và thay đổi được.
+                // Nếu return false toàn bộ, người dùng sẽ không thể chuyển mã đề cho học sinh.
+                return column == 3;
             }
         };
         tblResults = new JTable(tableModel);
+        tblResults.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION); // Cho phép chọn nhiều
         splitPane.setRightComponent(new JScrollPane(tblResults));
 
         add(splitPane, BorderLayout.CENTER);
@@ -125,4 +140,7 @@ public class MainView extends JFrame {
         progressBar.setValue(0);
         setTitle("Phần mềm Chấm Trắc Nghiệm - Team N7");
     }
+
+    public JButton getBtnBulkChangeCode() { return btnBulkChangeCode; }
+    public JButton getBtnChangeSelectedCode() { return btnChangeSelectedCode; }
 }

@@ -71,4 +71,10 @@ public class ExamConfig implements Serializable {
     public String getAnswer(String questionId) {
         return answersByCode.get(activeCode).get(questionId);
     }
+
+    // [FIX]: Thêm hàm getAnswers() để trả về toàn bộ đáp án của mã đề đang Active
+    // Cung cấp dữ liệu cho ScoringEngine và ExcelService
+    public Map<String, String> getAnswers() {
+        return answersByCode.getOrDefault(activeCode, new HashMap<>());
+    }
 }
