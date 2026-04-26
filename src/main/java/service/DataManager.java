@@ -4,6 +4,7 @@ import model.ExamSession;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.prefs.Preferences;
 
 public class DataManager {
     // Thời gian lưu thùng rác: 30 ngày
@@ -306,4 +307,23 @@ public class DataManager {
     public static boolean shouldShowTutorial() {
         return !new File(PREF_FILE).exists();
     }
+    // Thêm vào trong class DataManager
+    private static final Preferences sysPrefs = Preferences.userRoot().node("ChamTracNghiem_N7_SystemSettings");
+
+    public static boolean isAutoSavePosition() {
+        return sysPrefs.getBoolean("auto_save_pos", true); // Mặc định là bật
+    }
+
+    public static void setAutoSavePosition(boolean enabled) {
+        sysPrefs.putBoolean("auto_save_pos", enabled);
+    }
+
+    public static boolean isDarkMode() {
+        return sysPrefs.getBoolean("dark_mode", false); // Mặc định là sáng
+    }
+
+    public static void setDarkMode(boolean enabled) {
+        sysPrefs.putBoolean("dark_mode", enabled);
+    }
+
 }

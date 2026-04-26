@@ -5,6 +5,11 @@ import javax.swing.SwingUtilities;
 
 public class App {
     public static void main(String[] args) {
+        if (service.DataManager.isDarkMode()) {
+            com.formdev.flatlaf.FlatDarkLaf.setup();
+        } else {
+            com.formdev.flatlaf.FlatLightLaf.setup();
+        }
         // invokeLater đảm bảo giao diện được tạo và cập nhật trên Event Dispatch Thread (EDT),
         // tránh các lỗi treo UI tiềm ẩn.
         SwingUtilities.invokeLater(() -> {

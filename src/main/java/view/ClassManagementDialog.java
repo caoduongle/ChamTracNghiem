@@ -7,7 +7,7 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.io.File;
 import java.util.List;
-import java.util.prefs.Preferences; // THÊM THƯ VIỆN NHỚ VỊ TRÍ
+import java.util.prefs.Preferences;
 
 // THƯ VIỆN KÉO THẢ
 import java.awt.dnd.DropTarget;
@@ -38,7 +38,8 @@ public class ClassManagementDialog extends JDialog {
         pnlList.add(new JScrollPane(tblClasses), BorderLayout.CENTER);
         add(pnlList, BorderLayout.CENTER);
 
-        JPanel pnlBtns = new JPanel(new GridLayout(4, 2, 5, 5));
+        // [FIX]: Chuyển thành GridLayout(5, 2) để chứa thêm nút Cài đặt
+        JPanel pnlBtns = new JPanel(new GridLayout(5, 2, 5, 5));
         pnlBtns.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
         JButton btnNew = new JButton("➕ Tạo lớp mới");
@@ -48,12 +49,14 @@ public class ClassManagementDialog extends JDialog {
         JButton btnDel = new JButton("❌ Xóa lớp");
         JButton btnTrash = new JButton("🗑 Thùng rác lớp học");
         JButton btnClassDashboard = new JButton("📈 Thống kê Tổng quan Lớp");
+        JButton btnSettings = new JButton("⚙ Cài đặt hệ thống"); // Thêm nút mới
         JLabel emptyLabel = new JLabel("");
 
         pnlBtns.add(btnNew); pnlBtns.add(btnOpen);
         pnlBtns.add(btnRename); pnlBtns.add(btnEdit);
         pnlBtns.add(btnDel); pnlBtns.add(btnTrash);
-        pnlBtns.add(btnClassDashboard); pnlBtns.add(emptyLabel);
+        pnlBtns.add(btnClassDashboard); pnlBtns.add(btnSettings); // Thay thế nhãn trống bằng nút Cài đặt
+        pnlBtns.add(emptyLabel); // Đẩy nhãn trống xuống cuối
 
         add(pnlBtns, BorderLayout.SOUTH);
 
@@ -135,8 +138,14 @@ public class ClassManagementDialog extends JDialog {
             }
         });
 
+        // [NEW]: Sự kiện mở hộp thoại cài đặt
+        btnSettings.addActionListener(e -> {
+            new SettingsDialog((JFrame) SwingUtilities.getWindowAncestor(this)).setVisible(true);
+        });
+
         setLocationRelativeTo(parent);
-        // Thêm vào cuối hàm public ClassManagementDialog(...) { ... }
+
+        // Nhớ vị trí cho màn hình ClassManagement
         service.WindowPersistenceManager.restoreWindow(this, "ClassManagementDialog", 550, 500);
         service.WindowPersistenceManager.attachSaver(this, "ClassManagementDialog");
     }
@@ -270,7 +279,8 @@ class ClassEditorDialog extends JDialog {
         add(pnlBottom, BorderLayout.SOUTH);
 
         setLocationRelativeTo(getParent());
-        // Thêm vào cuối hàm private void initUI(int initialSize) { ... }
+
+        // Nhớ vị trí cho màn hình ClassEditor
         service.WindowPersistenceManager.restoreWindow(this, "ClassEditorDialog", 550, 650);
         service.WindowPersistenceManager.attachSaver(this, "ClassEditorDialog");
     }

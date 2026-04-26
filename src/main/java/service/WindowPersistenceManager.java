@@ -39,6 +39,7 @@ public class WindowPersistenceManager {
     }
 
     private static void saveFrameSettings(JFrame frame, String windowName) {
+        if (!service.DataManager.isAutoSavePosition()) return;
         int state = frame.getExtendedState();
         boolean isMaximized = (state & JFrame.MAXIMIZED_BOTH) != 0;
         prefs.putBoolean(windowName + "_max", isMaximized);
@@ -81,6 +82,7 @@ public class WindowPersistenceManager {
     }
 
     private static void saveDialogSettings(JDialog dialog, String windowName) {
+        if (!service.DataManager.isAutoSavePosition()) return;
         Rectangle bounds = dialog.getBounds();
         prefs.putInt(windowName + "_x", bounds.x);
         prefs.putInt(windowName + "_y", bounds.y);
