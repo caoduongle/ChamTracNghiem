@@ -8,7 +8,7 @@ import java.nio.channels.ReadableByteChannel;
 
 public class UpdateService {
     // Phiên bản hiện tại của phần mềm
-    public static final String CURRENT_VERSION = "1.3.2";
+    public static final String CURRENT_VERSION = "1.4.0";
 
     // ĐÃ FIX 1: Dùng link Raw gốc, không có token (Yêu cầu repo GitHub phải là Public)
     private static final String VERSION_URL = "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/version.txt";

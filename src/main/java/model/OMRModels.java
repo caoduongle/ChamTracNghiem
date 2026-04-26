@@ -43,18 +43,6 @@ public class OMRModels {
         public String studentClass = "";
         public String statusMessage = "";
 
-        public void printReport() {
-            System.out.println("\n================= PHIẾU ĐIỂM ==================");
-            System.out.println("SBD: " + studentId + " | Mã đề: " + examCode);
-            System.out.println("-----------------------------------------------");
-            System.out.println("Câu hỏi    | Trả lời    | Đáp án     | Kết quả| Điểm");
-            System.out.println("-----------------------------------------------");
-            for (AnswerRecord record : details) {
-                System.out.println(record.toString());
-            }
-            System.out.println("-----------------------------------------------");
-            System.out.printf("TỔNG ĐIỂM BÀI THI: %.2f\n", totalScore);
-            System.out.println("===============================================\n");
-        }
+
     }
 }

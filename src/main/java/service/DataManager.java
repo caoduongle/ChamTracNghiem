@@ -18,14 +18,11 @@ public class DataManager {
     private static final String CLASS_DIR = "data/classes/";
     private static final String CLASS_TRASH_DIR = "data/classes/trash/";
 
-    // =========================================================
-    // [NEW] SHUTDOWN HOOK: Bắt sự kiện Tắt App
-    // =========================================================
     static {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             if (getAutoCleanupMode() == 3) {
                 try {
-                    performDeepCleanup(null); // Quét ngầm khi tắt app
+                    performDeepCleanup(null);
                 } catch (Exception e) { e.printStackTrace(); }
             }
         }));
@@ -70,22 +67,13 @@ public class DataManager {
     public static boolean isAutoCleanProcessed() { return sysPrefs.getBoolean("auto_clean_processed", true); }
     public static void setAutoCleanProcessed(boolean enabled) { sysPrefs.putBoolean("auto_clean_processed", enabled); }
 
-    // =========================================================
-    // [NEW] CÀI ĐẶT CHẾ ĐỘ DỌN RÁC NGẦM
-    // 0 = Tắt, 1 = Khởi động, 2 = Chấm xong, 3 = Tắt app
-    // =========================================================
-    public static int getAutoCleanupMode() {
-        return sysPrefs.getInt("auto_cleanup_mode", 0);
-    }
-    public static void setAutoCleanupMode(int mode) {
-        sysPrefs.putInt("auto_cleanup_mode", mode);
-    }
+    public static int getAutoCleanupMode() { return sysPrefs.getInt("auto_cleanup_mode", 0); }
+    public static void setAutoCleanupMode(int mode) { sysPrefs.putInt("auto_cleanup_mode", mode); }
 
-    // Hàm gọi tiến trình dọn rác chạy ngầm (Không block giao diện)
     public static void performSilentDeepCleanup() {
         new Thread(() -> {
             try {
-                performDeepCleanup(null); // null listener = chạy im lặng
+                performDeepCleanup(null);
             } catch (Exception e) { e.printStackTrace(); }
         }).start();
     }
@@ -165,7 +153,9 @@ public class DataManager {
         }
     }
 
-    // --- CÁC HÀM CÒN LẠI GIỮ NGUYÊN BÊN DƯỚI ---
+    // =========================================================
+    // BACKUP & RESTORE
+    // =========================================================
     public static void backupData(File targetZip, ProgressListener listener) throws IOException {
         Path sourceDirPath = Paths.get("data");
         if (!Files.exists(sourceDirPath)) return;
@@ -223,6 +213,9 @@ public class DataManager {
         }
     }
 
+    // =========================================================
+    // QUẢN LÝ LỚP & ĐỀ THI
+    // =========================================================
     private static String getExamDir(String className) { return "data/classes/" + className + "/exams/"; }
     private static String getTrashDir(String className) { return "data/classes/" + className + "/trash/"; }
 
@@ -243,7 +236,7 @@ public class DataManager {
     }
 
     public static List<String> listSavedExams(String className) {
-        cleanupTrash(className);
+        cleanTrashInDirectory(getTrashDir(className)); // Áp dụng hàm DRY
         List<String> exams = new ArrayList<>();
         File dir = new File(getExamDir(className));
         if (dir.exists()) {
@@ -267,22 +260,7 @@ public class DataManager {
     }
 
     public static List<TrashedItem> listTrashedExams(String className) {
-        List<TrashedItem> trashed = new ArrayList<>();
-        File dir = new File(getTrashDir(className));
-        if (dir.exists()) {
-            long now = System.currentTimeMillis();
-            for (File f : dir.listFiles()) {
-                if (f.getName().contains(".dat_deleted_")) {
-                    try {
-                        String[] parts = f.getName().split("\\.dat_deleted_");
-                        long deleteTime = Long.parseLong(parts[1]);
-                        int daysLeft = (int) ((THIRTY_DAYS_MS - (now - deleteTime)) / (24 * 60 * 60 * 1000));
-                        trashed.add(new TrashedItem(parts[0], f.getName(), Math.max(0, daysLeft), f.lastModified(), deleteTime));
-                    } catch (Exception e) { }
-                }
-            }
-        }
-        return trashed;
+        return getTrashedItemsFromDirectory(getTrashDir(className));
     }
 
     public static void restoreFromTrash(String trashFileName, String className) {
@@ -326,20 +304,6 @@ public class DataManager {
         if (target.exists()) target.delete();
     }
 
-    private static void cleanupTrash(String className) {
-        File dir = new File(getTrashDir(className));
-        if (!dir.exists()) return;
-        long now = System.currentTimeMillis();
-        for (File f : dir.listFiles()) {
-            if (f.getName().contains(".dat_deleted_")) {
-                try {
-                    long deleteTime = Long.parseLong(f.getName().split("\\.dat_deleted_")[1]);
-                    if (now - deleteTime > THIRTY_DAYS_MS) f.delete();
-                } catch (Exception ignored) {}
-            }
-        }
-    }
-
     public static void saveClass(model.ClassRoom cr) {
         try {
             File dir = new File(CLASS_DIR); if (!dir.exists()) dir.mkdirs();
@@ -356,7 +320,7 @@ public class DataManager {
     }
 
     public static List<String> listClasses() {
-        cleanupClassTrash();
+        cleanTrashInDirectory(CLASS_TRASH_DIR); // Áp dụng hàm DRY
         List<String> list = new ArrayList<>();
         File dir = new File(CLASS_DIR);
         if (dir.exists()) {
@@ -391,22 +355,7 @@ public class DataManager {
     }
 
     public static List<TrashedItem> listTrashedClasses() {
-        List<TrashedItem> trashed = new ArrayList<>();
-        File dir = new File(CLASS_TRASH_DIR);
-        if (dir.exists()) {
-            long now = System.currentTimeMillis();
-            for (File f : dir.listFiles()) {
-                if (f.getName().contains(".dat_deleted_")) {
-                    try {
-                        String[] parts = f.getName().split("\\.dat_deleted_");
-                        long deleteTime = Long.parseLong(parts[1]);
-                        int daysLeft = (int) ((THIRTY_DAYS_MS - (now - deleteTime)) / (24 * 60 * 60 * 1000));
-                        trashed.add(new TrashedItem(parts[0], f.getName(), Math.max(0, daysLeft), f.lastModified(), deleteTime));
-                    } catch (Exception e) { }
-                }
-            }
-        }
-        return trashed;
+        return getTrashedItemsFromDirectory(CLASS_TRASH_DIR);
     }
 
     public static void restoreClassFromTrash(String trashFileName) {
@@ -433,8 +382,11 @@ public class DataManager {
         if (target.exists()) target.delete();
     }
 
-    private static void cleanupClassTrash() {
-        File dir = new File(CLASS_TRASH_DIR);
+    // =========================================================
+    // [REFACTOR] HÀM TIỆN ÍCH DÙNG CHUNG (ÁP DỤNG DRY)
+    // =========================================================
+    private static void cleanTrashInDirectory(String dirPath) {
+        File dir = new File(dirPath);
         if (!dir.exists()) return;
         long now = System.currentTimeMillis();
         for (File f : dir.listFiles()) {
@@ -445,6 +397,25 @@ public class DataManager {
                 } catch (Exception ignored) {}
             }
         }
+    }
+
+    private static List<TrashedItem> getTrashedItemsFromDirectory(String dirPath) {
+        List<TrashedItem> trashed = new ArrayList<>();
+        File dir = new File(dirPath);
+        if (dir.exists()) {
+            long now = System.currentTimeMillis();
+            for (File f : dir.listFiles()) {
+                if (f.getName().contains(".dat_deleted_")) {
+                    try {
+                        String[] parts = f.getName().split("\\.dat_deleted_");
+                        long deleteTime = Long.parseLong(parts[1]);
+                        int daysLeft = (int) ((THIRTY_DAYS_MS - (now - deleteTime)) / (24 * 60 * 60 * 1000));
+                        trashed.add(new TrashedItem(parts[0], f.getName(), Math.max(0, daysLeft), f.lastModified(), deleteTime));
+                    } catch (Exception e) { }
+                }
+            }
+        }
+        return trashed;
     }
 
     public static void setTutorialPreference(boolean showTutorial) {
