@@ -69,7 +69,7 @@ public class UpdateService {
             String batCode =
                     "@echo off\r\n" +
                             "echo Dang cap nhat phan mem...\r\n" +
-                            "timeout /t 3 /nobreak > NUL\r\n" +
+                            "timeout /t 10 /nobreak > NUL\r\n" +
                             "del \"" + oldExeName + "\"\r\n" +
                             "ren update_temp.exe \"" + newExeName + "\"\r\n" +
                             "start \"\" \"" + newExeName + "\"\r\n" +
