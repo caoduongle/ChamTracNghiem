@@ -183,6 +183,9 @@ public class StartupDialog extends JDialog {
         });
 
         setLocationRelativeTo(parent);
+        // Thêm vào cuối hàm public StartupDialog(...) { ... }
+        service.WindowPersistenceManager.restoreWindow(this, "StartupDialog", 650, 700);
+        service.WindowPersistenceManager.attachSaver(this, "StartupDialog");
     }
 
     private void refreshExamList() {

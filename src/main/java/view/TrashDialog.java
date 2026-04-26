@@ -91,6 +91,9 @@ public class TrashDialog extends JDialog {
 
         btnClose.addActionListener(e -> dispose());
         setLocationRelativeTo(parent);
+        // Thêm vào cuối hàm public TrashDialog(...) { ... }
+        service.WindowPersistenceManager.restoreWindow(this, "TrashDialog", 750, 450);
+        service.WindowPersistenceManager.attachSaver(this, "TrashDialog");
     }
 
     private void filter() {

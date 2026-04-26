@@ -183,6 +183,9 @@ public class AnswerKeyDialog extends JDialog {
         updateTable();
 
         setLocationRelativeTo(parent);
+        // Thêm vào cuối hàm public AnswerKeyDialog(...) { ... }
+        service.WindowPersistenceManager.restoreWindow(this, "AnswerKeyDialog", 800, 750);
+        service.WindowPersistenceManager.attachSaver(this, "AnswerKeyDialog");
     }
 
     private void saveUIToCache() {
@@ -440,4 +443,5 @@ public class AnswerKeyDialog extends JDialog {
     }
 
     public JButton getBtnSave() { return btnSave; }
+
 }

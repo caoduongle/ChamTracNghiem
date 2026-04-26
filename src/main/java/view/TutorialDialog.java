@@ -65,6 +65,9 @@ public class TutorialDialog extends JDialog {
         });
 
         loadImage(); // Tải ảnh đầu tiên
+        // Thêm vào cuối hàm public TutorialDialog(...) { ... }
+        service.WindowPersistenceManager.restoreWindow(this, "TutorialDialog", 550, 750);
+        service.WindowPersistenceManager.attachSaver(this, "TutorialDialog");
     }
 
     private void loadImage() {

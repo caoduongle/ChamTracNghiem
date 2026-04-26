@@ -86,6 +86,9 @@ public class ClassTrashDialog extends JDialog {
 
         btnClose.addActionListener(e -> dispose());
         setLocationRelativeTo(parent);
+        // Thêm vào cuối hàm public ClassTrashDialog(...) { ... }
+        service.WindowPersistenceManager.restoreWindow(this, "ClassTrashDialog", 750, 450);
+        service.WindowPersistenceManager.attachSaver(this, "ClassTrashDialog");
     }
 
     private void filter() {
@@ -104,4 +107,5 @@ public class ClassTrashDialog extends JDialog {
             });
         }
     }
+
 }

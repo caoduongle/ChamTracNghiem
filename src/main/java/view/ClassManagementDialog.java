@@ -136,6 +136,9 @@ public class ClassManagementDialog extends JDialog {
         });
 
         setLocationRelativeTo(parent);
+        // Thêm vào cuối hàm public ClassManagementDialog(...) { ... }
+        service.WindowPersistenceManager.restoreWindow(this, "ClassManagementDialog", 550, 500);
+        service.WindowPersistenceManager.attachSaver(this, "ClassManagementDialog");
     }
 
     private void loadClasses() {
@@ -267,6 +270,9 @@ class ClassEditorDialog extends JDialog {
         add(pnlBottom, BorderLayout.SOUTH);
 
         setLocationRelativeTo(getParent());
+        // Thêm vào cuối hàm private void initUI(int initialSize) { ... }
+        service.WindowPersistenceManager.restoreWindow(this, "ClassEditorDialog", 550, 650);
+        service.WindowPersistenceManager.attachSaver(this, "ClassEditorDialog");
     }
 
     private void processExcelFile(File file) {

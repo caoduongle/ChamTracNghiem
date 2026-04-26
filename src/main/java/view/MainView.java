@@ -3,6 +3,7 @@ package view;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import service.WindowPersistenceManager;
 
 public class MainView extends JFrame {
 
@@ -23,13 +24,17 @@ public class MainView extends JFrame {
     private JProgressBar progressBar;
 
     public MainView() {
-        setTitle("Phần mềm Chấm Trắc Nghiệm - Team N7");
-        setSize(1200, 700);
+        setTitle("Phần mềm Chấm Trắc Nghiệm ");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setLocationRelativeTo(null);
         setLayout(new BorderLayout(10, 10));
 
         initUI();
+
+        // [NEW]: Tự động khôi phục vị trí cũ, nếu chưa có thì để mặc định 1200x700
+        WindowPersistenceManager.restoreWindow(this, "MainView", 1200, 700);
+
+        // [NEW]: Tự động lưu khi tắt app
+        WindowPersistenceManager.attachSaver(this, "MainView");
     }
 
     private void initUI() {

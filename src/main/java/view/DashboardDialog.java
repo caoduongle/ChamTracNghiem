@@ -65,6 +65,9 @@ public class DashboardDialog extends JDialog {
         }
 
         add(tabbedPane, BorderLayout.CENTER);
+        // Thêm vào cuối hàm public DashboardDialog(...) { ... }
+        service.WindowPersistenceManager.restoreWindow(this, "DashboardDialog", 1200, 800);
+        service.WindowPersistenceManager.attachSaver(this, "DashboardDialog");
     }
 
     // Hàm tạo nội dung cho từng Tab Mã Đề

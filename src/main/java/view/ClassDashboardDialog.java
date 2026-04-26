@@ -40,6 +40,9 @@ public class ClassDashboardDialog extends JDialog {
         }
 
         initUI();
+        // Thêm vào cuối hàm public ClassDashboardDialog(...) { ... }
+        service.WindowPersistenceManager.restoreWindow(this, "ClassDashboardDialog", 1000, 700);
+        service.WindowPersistenceManager.attachSaver(this, "ClassDashboardDialog");
     }
 
     private void initUI() {
