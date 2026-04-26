@@ -12,6 +12,7 @@ public class SettingsDialog extends JDialog {
     private JToggleButton btnToggleTheme;
     private JTextField txtExportPath;
     private JSlider sldOmrThreshold;
+    private JComboBox<String> cbxAutoCleanup; // Thêm biến mới
 
     public SettingsDialog(JFrame parent) {
         super(parent, "Cài đặt hệ thống - Team N7", true);
@@ -33,6 +34,11 @@ public class SettingsDialog extends JDialog {
             DataManager.setSoundEnabled(chkSound.isSelected());
             DataManager.setAutoCleanProcessed(chkAutoClean.isSelected());
             DataManager.setDefaultExportPath(txtExportPath.getText());
+
+            // Lưu chế độ dọn rác tự động
+            if (cbxAutoCleanup != null) {
+                DataManager.setAutoCleanupMode(cbxAutoCleanup.getSelectedIndex());
+            }
 
             if (sldOmrThreshold != null) {
                 DataManager.setOmrThreshold(sldOmrThreshold.getValue());
@@ -70,7 +76,21 @@ public class SettingsDialog extends JDialog {
         contentPanel.add(btnToggleTheme);
 
         contentPanel.add(Box.createRigidArea(new Dimension(0, 20)));
-        contentPanel.add(new JLabel("Bảo trì dữ liệu:"));
+        contentPanel.add(new JLabel("Bảo trì & Dọn dẹp:"));
+
+        // [NEW] Khu vực cài đặt Auto Cleanup
+        JPanel pnlAutoClean = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 5));
+        pnlAutoClean.add(new JLabel("Quét dọn hệ thống ngầm: "));
+        String[] cleanupModes = {
+                "0. Tắt (Chỉ dọn khi bấm nút thủ công)",
+                "1. Khi khởi động phần mềm",
+                "2. Sau khi chấm xong một lô bài",
+                "3. Khi thoát phần mềm"
+        };
+        cbxAutoCleanup = new JComboBox<>(cleanupModes);
+        cbxAutoCleanup.setSelectedIndex(DataManager.getAutoCleanupMode());
+        pnlAutoClean.add(cbxAutoCleanup);
+        contentPanel.add(pnlAutoClean);
 
         JPanel pnlBtns = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
         JButton btnBackup = new JButton("📦 Backup");
@@ -96,7 +116,7 @@ public class SettingsDialog extends JDialog {
             }
         });
 
-        JButton btnClearCache = new JButton("<html><span style=\"font-family: 'Segoe UI Emoji'\">🧹</span> Dọn dẹp rác</html>");
+        JButton btnClearCache = new JButton("<html><span style=\"font-family: 'Segoe UI Emoji'\">🧹</span> Dọn rác thủ công</html>");
         btnClearCache.setToolTipText("Xóa toàn bộ các ảnh xử lý thừa và dọn dẹp các thư mục rác của Lớp/Đề thi đã bị xóa.");
         btnClearCache.addActionListener(e -> {
             if (JOptionPane.showConfirmDialog(this, "Bạn có muốn quét sâu để dọn dẹp ảnh rác và dữ liệu mồ côi (từ các lớp/đề đã xóa) không?", "Xác nhận dọn dẹp", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
@@ -282,11 +302,9 @@ public class SettingsDialog extends JDialog {
                 task.process(new DataManager.ProgressListener() {
                     @Override
                     public void onProgress(int current, int total, String fileName) {
-                        // Tính toán an toàn không bao giờ bị / zero
                         int progress = (total > 0) ? (int) ((double) current / total * 100) : 100;
-                        // Ép giới hạn 0-100 để không crash ProgressMonitor
                         progress = Math.max(0, Math.min(100, progress));
-                        publish(new Object[]{progress, fileName}); // Đã fix text hiển thị gọn gàng
+                        publish(new Object[]{progress, fileName});
                     }
                     @Override
                     public boolean isCanceled() { return pm.isCanceled(); }

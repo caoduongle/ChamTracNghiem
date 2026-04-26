@@ -18,6 +18,19 @@ public class DataManager {
     private static final String CLASS_DIR = "data/classes/";
     private static final String CLASS_TRASH_DIR = "data/classes/trash/";
 
+    // =========================================================
+    // [NEW] SHUTDOWN HOOK: Bắt sự kiện Tắt App
+    // =========================================================
+    static {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            if (getAutoCleanupMode() == 3) {
+                try {
+                    performDeepCleanup(null); // Quét ngầm khi tắt app
+                } catch (Exception e) { e.printStackTrace(); }
+            }
+        }));
+    }
+
     public interface ProgressListener {
         void onProgress(int current, int total, String fileName);
         boolean isCanceled();
@@ -58,13 +71,32 @@ public class DataManager {
     public static void setAutoCleanProcessed(boolean enabled) { sysPrefs.putBoolean("auto_clean_processed", enabled); }
 
     // =========================================================
-    // [FIX]: THUẬT TOÁN DỌN DẸP SÂU (CHUẨN TIẾN ĐỘ 100%)
+    // [NEW] CÀI ĐẶT CHẾ ĐỘ DỌN RÁC NGẦM
+    // 0 = Tắt, 1 = Khởi động, 2 = Chấm xong, 3 = Tắt app
+    // =========================================================
+    public static int getAutoCleanupMode() {
+        return sysPrefs.getInt("auto_cleanup_mode", 0);
+    }
+    public static void setAutoCleanupMode(int mode) {
+        sysPrefs.putInt("auto_cleanup_mode", mode);
+    }
+
+    // Hàm gọi tiến trình dọn rác chạy ngầm (Không block giao diện)
+    public static void performSilentDeepCleanup() {
+        new Thread(() -> {
+            try {
+                performDeepCleanup(null); // null listener = chạy im lặng
+            } catch (Exception e) { e.printStackTrace(); }
+        }).start();
+    }
+
+    // =========================================================
+    // THUẬT TOÁN DỌN DẸP SÂU
     // =========================================================
     public static void performDeepCleanup(ProgressListener listener) throws IOException {
         Path classesDir = Paths.get("data/classes");
         if (!Files.exists(classesDir)) return;
 
-        // BƯỚC 1: Đếm tổng số file ảnh rác (_processed)
         List<Path> processedFiles = new ArrayList<>();
         try (Stream<Path> walk = Files.walk(classesDir)) {
             processedFiles = walk
@@ -72,7 +104,6 @@ public class DataManager {
                     .collect(Collectors.toList());
         }
 
-        // BƯỚC 2: Tìm các thư mục Lớp/Đề mồ côi
         List<Path> orphanedDirs = new ArrayList<>();
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(classesDir)) {
             for (Path entry : stream) {
@@ -80,7 +111,7 @@ public class DataManager {
                     String className = entry.getFileName().toString();
                     Path classDatFile = classesDir.resolve(className + ".dat");
                     if (!Files.exists(classDatFile)) {
-                        orphanedDirs.add(entry); // Lớp mồ côi
+                        orphanedDirs.add(entry);
                     } else {
                         Path imagesDir = entry.resolve("images");
                         Path examsDir = entry.resolve("exams");
@@ -90,7 +121,7 @@ public class DataManager {
                                     if (Files.isDirectory(examImgFolder)) {
                                         String examName = examImgFolder.getFileName().toString();
                                         if (!Files.exists(examsDir.resolve(examName + ".dat"))) {
-                                            orphanedDirs.add(examImgFolder); // Đề mồ côi
+                                            orphanedDirs.add(examImgFolder);
                                         }
                                     }
                                 }
@@ -101,7 +132,6 @@ public class DataManager {
             }
         }
 
-        // BƯỚC 3: Tính tổng số công việc để thanh tiến độ chạy mượt
         int totalTasks = orphanedDirs.size() + processedFiles.size();
         int current = 0;
 
@@ -110,7 +140,6 @@ public class DataManager {
             return;
         }
 
-        // Xóa thư mục mồ côi
         for (Path dir : orphanedDirs) {
             if (listener != null && listener.isCanceled()) return;
             current++;
@@ -118,7 +147,6 @@ public class DataManager {
             deleteDirectoryRecursively(dir);
         }
 
-        // Xóa ảnh rác
         for (Path p : processedFiles) {
             if (listener != null && listener.isCanceled()) return;
             current++;
@@ -127,7 +155,6 @@ public class DataManager {
         }
     }
 
-    // Hàm đệ quy hỗ trợ xóa thư mục có bọc try-with-resources để chống rò rỉ bộ nhớ
     private static void deleteDirectoryRecursively(Path path) throws IOException {
         if (Files.exists(path)) {
             try (Stream<Path> walk = Files.walk(path)) {
@@ -137,9 +164,8 @@ public class DataManager {
             }
         }
     }
-    // =========================================================
 
-    // --- LOGIC SAO LƯU (BACKUP) ---
+    // --- CÁC HÀM CÒN LẠI GIỮ NGUYÊN BÊN DƯỚI ---
     public static void backupData(File targetZip, ProgressListener listener) throws IOException {
         Path sourceDirPath = Paths.get("data");
         if (!Files.exists(sourceDirPath)) return;
@@ -167,7 +193,6 @@ public class DataManager {
         }
     }
 
-    // --- LOGIC PHỤC HỒI (RESTORE) ---
     public static void restoreData(File zipFile, ProgressListener listener) throws IOException {
         Path destDirPath = Paths.get("data");
         if (!Files.exists(destDirPath)) Files.createDirectories(destDirPath);
@@ -198,7 +223,6 @@ public class DataManager {
         }
     }
 
-    // --- QUẢN LÝ LỚP HỌC & ĐỀ THI ---
     private static String getExamDir(String className) { return "data/classes/" + className + "/exams/"; }
     private static String getTrashDir(String className) { return "data/classes/" + className + "/trash/"; }
 

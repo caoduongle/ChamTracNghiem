@@ -51,6 +51,11 @@ public class MainController {
         this.view = view;
         initController();
         initApp();
+
+        // [NEW] Bắt sự kiện Dọn rác khi Khởi động App (Mode = 1)
+        if (DataManager.getAutoCleanupMode() == 1) {
+            DataManager.performSilentDeepCleanup();
+        }
     }
 
     public void initApp() {
@@ -769,9 +774,6 @@ public class MainController {
         dialog.setVisible(true);
     }
 
-    /**
-     * HÀM CLONE SÂU: Khắc phục lỗi Race Condition trong cấu hình khi chạy đa luồng
-     */
     private ExamConfig deepCloneConfig(ExamConfig original) {
         try {
             java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
@@ -786,7 +788,7 @@ public class MainController {
     }
 
     // =====================================================================
-    // [NEW] TIẾN TRÌNH CHẤM BÀI SIÊU TỐC ĐA LUỒNG BẰNG EXECUTOR SERVICE
+    // TIẾN TRÌNH CHẤM BÀI SIÊU TỐC ĐA LUỒNG BẰNG EXECUTOR SERVICE
     // =====================================================================
     private void startGradingProcess() {
 
@@ -812,39 +814,29 @@ public class MainController {
                 view.getBtnStopGrading().setEnabled(true);
 
                 int totalFiles = assignedFiles.size();
-                AtomicInteger currentCount = new AtomicInteger(0); // Bộ đếm an toàn luồng
+                AtomicInteger currentCount = new AtomicInteger(0);
 
                 boolean useMultiThread = service.DataManager.isMultiThreadEnabled();
                 boolean autoClean = service.DataManager.isAutoCleanProcessed();
 
                 publish(new Object[]{"INIT_PROGRESS"});
-                // =========================================================================
-                // [THUẬT TOÁN ĐO LƯỜNG AN TOÀN CHO MÁY YẾU]
-                // =========================================================================
+
                 int coreCount = Runtime.getRuntime().availableProcessors();
                 long maxMemoryMB = Runtime.getRuntime().maxMemory() / (1024 * 1024);
 
                 int safeThreads = 1;
                 if (useMultiThread) {
                     if (maxMemoryMB < 1500) {
-                        // Máy RAM siêu yếu (cấp cho Java < 1.5GB): Chạy tối đa 2 luồng
                         safeThreads = Math.min(2, coreCount);
                     } else if (maxMemoryMB < 3000) {
-                        // Máy RAM trung bình (cấp cho Java < 3GB): Chạy tối đa 4 luồng
                         safeThreads = Math.min(4, coreCount);
                     } else {
-                        // Máy khỏe (như HP Victus của bạn): Bung xõa hết nhân CPU
                         safeThreads = coreCount;
                     }
                 }
 
-                // Đảm bảo lúc nào cũng có ít nhất 1 luồng chạy
                 safeThreads = Math.max(1, safeThreads);
-
-                // Khởi tạo Thread Pool với số luồng bằng số nhân CPU nếu bật đa luồng
-                ExecutorService executor = useMultiThread
-                        ? Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors())
-                        : Executors.newSingleThreadExecutor();
+                ExecutorService executor = Executors.newFixedThreadPool(safeThreads);
 
                 List<Callable<Void>> tasks = new ArrayList<>();
 
@@ -856,7 +848,6 @@ public class MainController {
                         File file = entry.getValue();
 
                         try {
-                            // Tạo bản sao cấu hình riêng cho từng luồng để chống lỗi đè mã đề (Race Condition)
                             ExamConfig threadConfig = useMultiThread ? deepCloneConfig(currentConfig) : currentConfig;
 
                             String selectedCode = studentExamCodes.getOrDefault(stt, "Mặc định");
@@ -934,14 +925,11 @@ public class MainController {
                                     java.nio.file.Files.copy(file.toPath(), destFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                                     newReport.imagePath = destFile.getAbsolutePath();
 
-                                    // TÍNH NĂNG TỰ ĐỘNG XÓA RÁC (STORAGE OPTIMIZATION)
                                     File originalProcessed = new File(file.getAbsolutePath().replace(originalExt, "_processed" + originalExt));
                                     if (originalProcessed.exists()) {
                                         if (autoClean && !hasError && !hasWarning) {
-                                            // Xóa luôn ảnh debug nếu bài 100% hoàn hảo
                                             originalProcessed.delete();
                                         } else {
-                                            // Chuyển ảnh debug vào thư mục lưu trữ
                                             File destProcessed = new File(imageDir, stt + "_processed" + originalExt);
                                             java.nio.file.Files.copy(originalProcessed.toPath(), destProcessed.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                                             originalProcessed.delete();
@@ -951,7 +939,6 @@ public class MainController {
                                     newReport.imagePath = file.getAbsolutePath();
                                 }
 
-                                // Cập nhật dữ liệu an toàn (Thread-Safe)
                                 synchronized(reportDatabase) {
                                     reportDatabase.put(stt, newReport);
                                 }
@@ -965,7 +952,6 @@ public class MainController {
                             t.printStackTrace();
                         }
 
-                        // Tăng bộ đếm an toàn luồng
                         int completed = currentCount.incrementAndGet();
                         int percent = (completed * 100) / totalFiles;
                         String modeText = useMultiThread ? " (Đa luồng CPU)" : "";
@@ -975,7 +961,6 @@ public class MainController {
                     });
                 }
 
-                // Kích hoạt toàn bộ Thread chạy đồng thời và đợi đến khi xong hết
                 try {
                     executor.invokeAll(tasks);
                 } catch (InterruptedException e) {
@@ -984,7 +969,6 @@ public class MainController {
                     executor.shutdown();
                 }
 
-                // Chỉ lưu file session đúng 1 lần vào cuối cùng để tránh thắt cổ chai Ổ cứng (I/O Bottleneck)
                 if (currentSession != null) {
                     service.DataManager.saveSession(currentSession, currentClassRoom.className);
                 }
@@ -1031,6 +1015,12 @@ public class MainController {
                     view.setStatusMessage("Hoàn tất quy trình chấm bài đa mã đề.");
                     JOptionPane.showMessageDialog(view, "Đã chấm xong! Dữ liệu đã được lưu riêng cho lớp " + currentClassRoom.className);
                 }
+
+                // [NEW] Bắt sự kiện Dọn rác sau khi chấm xong (Mode = 2)
+                if (!isCancelled() && service.DataManager.getAutoCleanupMode() == 2) {
+                    service.DataManager.performSilentDeepCleanup();
+                }
+
                 if (!isCancelled() && service.DataManager.isSoundEnabled()) {
                     Toolkit.getDefaultToolkit().beep();
                 }
