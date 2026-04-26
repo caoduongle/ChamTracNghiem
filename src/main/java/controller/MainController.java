@@ -4,9 +4,10 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableColumn;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.prefs.Preferences; // THƯ VIỆN LƯU TRỮ VỊ TRÍ
+import java.util.prefs.Preferences;
 
 // THƯ VIỆN KÉO THẢ
 import java.awt.dnd.DropTarget;
@@ -38,6 +39,9 @@ public class MainController {
     private Map<String, model.OMRModels.ExamReport> reportDatabase = new HashMap<>();
     private Map<String, File> assignedFiles = new HashMap<>();
     private List<String> currentRowStts = new ArrayList<>();
+
+    // Bộ nhớ lưu tạm "Học sinh STT x đang chọn Mã Đề y"
+    private Map<String, String> studentExamCodes = new HashMap<>();
 
     public MainController(MainView view) {
         this.view = view;
@@ -90,7 +94,15 @@ public class MainController {
 
     private void setupTableColumns() {
         DefaultTableModel model = (DefaultTableModel) view.getTblResults().getModel();
-        model.setColumnIdentifiers(new Object[]{"STT", "Họ Tên Học Sinh", "File Ảnh Bài Làm", "Tổng điểm", "Trạng thái"});
+        // Bổ sung thêm cột Mã Đề vào vị trí thứ 3 (Index 3)
+        model.setColumnIdentifiers(new Object[]{"STT", "Họ Tên Học Sinh", "File Ảnh", "Mã Đề", "Tổng điểm", "Trạng thái"});
+
+        // Nhúng ComboBox vào cột Mã Đề
+        if (currentConfig != null && currentConfig.getExamCodes() != null) {
+            TableColumn codeColumn = view.getTblResults().getColumnModel().getColumn(3);
+            JComboBox<String> comboBox = new JComboBox<>(currentConfig.getExamCodes().toArray(new String[0]));
+            codeColumn.setCellEditor(new DefaultCellEditor(comboBox));
+        }
     }
 
     private void loadSessionToUI() {
@@ -122,14 +134,31 @@ public class MainController {
                 fileName = "✅ " + new File(report.originalImagePath).getName();
             }
 
+            // Gán mã đề mặc định nếu chưa chọn
+            String code = studentExamCodes.getOrDefault(stt, currentConfig != null && !currentConfig.getExamCodes().isEmpty() ? currentConfig.getExamCodes().iterator().next() : "Mặc định");
+            // Ghi đè vào map để tránh rác
+            studentExamCodes.put(stt, code);
+
             String score = report != null ? String.valueOf(report.totalScore) : "";
             String status = report != null && report.statusMessage != null ? report.statusMessage : "Chưa chấm";
 
-            view.addResultRow(new Object[]{stt, student.name, fileName, score, status});
+            view.addResultRow(new Object[]{stt, student.name, fileName, code, score, status});
         }
     }
 
     private void initController() {
+        // --- LẮNG NGHE SỰ KIỆN GIÁO VIÊN ĐỔI MÃ ĐỀ TRÊN BẢNG ---
+        view.getTblResults().getModel().addTableModelListener(e -> {
+            if (e.getColumn() == 3) { // 3 là Cột Mã Đề
+                int row = e.getFirstRow();
+                if (row != -1 && row < currentRowStts.size()) {
+                    String stt = currentRowStts.get(row);
+                    String selectedCode = (String) view.getTblResults().getValueAt(row, 3);
+                    studentExamCodes.put(stt, selectedCode);
+                }
+            }
+        });
+
         view.getBtnBackToMenu().addActionListener(e -> {
             int confirm = JOptionPane.showConfirmDialog(view, "Bạn muốn lưu và trở về màn hình Chọn Đề?", "Xác nhận", JOptionPane.YES_NO_OPTION);
             if (confirm == JOptionPane.YES_OPTION) {
@@ -218,8 +247,9 @@ public class MainController {
                     currentSession.setConfig(this.currentConfig);
                     DataManager.saveSession(currentSession, currentClassRoom.className);
                 }
+                refreshTable(); // Để cập nhật lại Dropdown list mã đề nếu có thêm mã mới
                 dialog.dispose();
-                view.setStatusMessage("Đã lưu cấu hình: " + currentConfig.getTotalQuestions() + " câu.");
+                view.setStatusMessage("Đã lưu cấu hình đa mã đề: " + currentConfig.getExamCodes().size() + " mã.");
             });
             dialog.setVisible(true);
         });
@@ -346,14 +376,13 @@ public class MainController {
             @Override
             public void mouseClicked(MouseEvent e) {
                 JFileChooser chooser = new JFileChooser();
-                // --- BỘ NHỚ LƯU THƯ MỤC ẢNH BÀI LÀM ---
                 Preferences prefs = Preferences.userRoot().node("ChamTracNghiem_N7");
                 String lastDir = prefs.get("DIR_IMAGES", System.getProperty("user.home"));
                 chooser.setCurrentDirectory(new File(lastDir));
 
                 chooser.setDialogTitle("Chọn ảnh bài làm cho học sinh: " + name);
                 if (chooser.showOpenDialog(dropDialog) == JFileChooser.APPROVE_OPTION) {
-                    prefs.put("DIR_IMAGES", chooser.getSelectedFile().getParent()); // Ghi nhớ lại vị trí mới
+                    prefs.put("DIR_IMAGES", chooser.getSelectedFile().getParent());
                     assignedFiles.put(stt, chooser.getSelectedFile());
                     refreshTable();
                     dropDialog.dispose();
@@ -395,15 +424,13 @@ public class MainController {
 
     private void saveExcel(String defaultName, int type) {
         JFileChooser fileChooser = new JFileChooser();
-
-        // --- BỘ NHỚ LƯU THƯ MỤC XUẤT FILE ---
         Preferences prefs = Preferences.userRoot().node("ChamTracNghiem_N7");
         String lastDir = prefs.get("DIR_EXPORT", System.getProperty("user.home"));
         fileChooser.setCurrentDirectory(new File(lastDir));
         fileChooser.setSelectedFile(new File(defaultName));
 
         if (fileChooser.showSaveDialog(view) == JFileChooser.APPROVE_OPTION) {
-            prefs.put("DIR_EXPORT", fileChooser.getSelectedFile().getParent()); // Ghi nhớ lại vị trí xuất file mới
+            prefs.put("DIR_EXPORT", fileChooser.getSelectedFile().getParent());
 
             try {
                 String path = fileChooser.getSelectedFile().getAbsolutePath();
@@ -528,6 +555,11 @@ public class MainController {
     }
 
     private void startGradingProcess() {
+        // Cần đảm bảo nếu user đang sửa bảng mà ấn chấm thì phải chốt bảng trước
+        if (view.getTblResults().isEditing()) {
+            view.getTblResults().getCellEditor().stopCellEditing();
+        }
+
         if (assignedFiles.isEmpty()) {
             JOptionPane.showMessageDialog(view, "Chưa có ảnh nào được gán! Hãy click đúp vào tên học sinh để gán ảnh trước khi chấm.", "Thiếu thông tin", JOptionPane.WARNING_MESSAGE);
             return;
@@ -556,6 +588,12 @@ public class MainController {
                     try {
                         int percent = (currentCount * 100) / totalFiles;
                         publish(new Object[]{"STATUS", "Đang chấm: " + currentCount + "/" + totalFiles + " bài (STT " + stt + ")...", percent});
+
+                        // LẤY MÃ ĐỀ ĐÃ ĐƯỢC GIÁO VIÊN CHỌN TRÊN GIAO DIỆN
+                        String selectedCode = studentExamCodes.getOrDefault(stt, "Mặc định");
+
+                        // Ép cấu hình nhả đáp án của đúng mã đề đó ra cho máy chấm
+                        currentConfig.setActiveCode(selectedCode);
 
                         Map<String, String> studentResults = OMRService.processExam(file.getAbsolutePath(), currentConfig);
 
@@ -588,6 +626,7 @@ public class MainController {
                                 }
                             }
 
+                            // Truyền cấu hình (đã được bẻ ghi đông sang mã đề chuẩn) vào ScoringEngine
                             model.OMRModels.ExamReport newReport = service.ScoringEngine.gradeExam(
                                     stt, "AUTO", studentResults, currentConfig
                             );
@@ -597,13 +636,14 @@ public class MainController {
                             newReport.studentSttFile = stt;
                             newReport.studentClass = currentClassRoom.className;
 
-                            if (hasError) {
-                                newReport.statusMessage = "❌ Lỗi: " + String.join(", ", errorList);
-                            } else if (hasWarning) {
-                                newReport.statusMessage = "⚠️ Nhắc: " + String.join(", ", errorList);
-                            } else {
-                                newReport.statusMessage = "✅ Thành công";
-                            }
+                            // Lưu lại nhãn dán xem bài này đã được chấm bằng mã nào để phòng hờ
+                            // newReport.statusMessage có thể ghép thêm mã đề vào
+                            String baseStatus = "";
+                            if (hasError) baseStatus = "❌ Lỗi: " + String.join(", ", errorList);
+                            else if (hasWarning) baseStatus = "⚠️ Nhắc: " + String.join(", ", errorList);
+                            else baseStatus = "✅ Thành công";
+
+                            newReport.statusMessage = baseStatus;
 
                             try {
                                 File imageDir = new File("data/classes/" + currentClassRoom.className + "/images/" + currentSession.getExamName());
@@ -675,7 +715,7 @@ public class MainController {
                 assignedFiles.clear();
                 refreshTable();
 
-                view.setStatusMessage("Hoàn tất quy trình chấm bài.");
+                view.setStatusMessage("Hoàn tất quy trình chấm bài đa mã đề.");
                 JOptionPane.showMessageDialog(view, "Đã chấm xong! Dữ liệu đã được lưu riêng cho lớp " + currentClassRoom.className);
             }
         };

@@ -14,10 +14,12 @@ import java.awt.Font;
 import java.io.File;
 import java.io.FileInputStream;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.prefs.Preferences; // THÊM THƯ VIỆN NHỚ VỊ TRÍ
+import java.util.Map;
+import java.util.prefs.Preferences;
 
-// THÊM THƯ VIỆN KÉO THẢ
+// THƯ VIỆN KÉO THẢ
 import java.awt.dnd.DropTarget;
 import java.awt.dnd.DropTargetDropEvent;
 import java.awt.dnd.DnDConstants;
@@ -31,13 +33,38 @@ public class AnswerKeyDialog extends JDialog {
     private DefaultTableModel tableModel;
     private JButton btnSave, btnImport;
 
+    // --- CÁC BIẾN QUẢN LÝ ĐA MÃ ĐỀ ---
+    private JComboBox<String> cbxExamCodes;
+    private DefaultComboBoxModel<String> cbxModel;
+    private Map<String, Map<String, String>> uiCache = new HashMap<>();
+    private String currentCode = "Mặc định";
+    private boolean isUpdatingCombo = false;
+
     public AnswerKeyDialog(Frame parent) {
-        super(parent, "Thiết lập đáp án chuẩn - Team N7", true);
-        setSize(750, 750);
+        super(parent, "Thiết lập đáp án chuẩn (Đa Mã Đề) - Team N7", true);
+        setSize(800, 750);
         setLayout(new BorderLayout(10, 10));
 
+        uiCache.put(currentCode, new HashMap<>()); // Khởi tạo cache ban đầu
+
         // --- PANEL TRÊN CÙNG ---
-        JPanel pnlTopContainer = new JPanel(new GridLayout(2, 1, 5, 5));
+        JPanel pnlTopContainer = new JPanel(new GridLayout(3, 1, 5, 5));
+
+        // 0. Quản lý Mã Đề (TÍNH NĂNG MỚI)
+        JPanel pnlCodes = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        pnlCodes.setBorder(BorderFactory.createTitledBorder("Quản lý Mã Đề"));
+        pnlCodes.add(new JLabel("Đang sửa đáp án cho mã đề: "));
+
+        cbxModel = new DefaultComboBoxModel<>();
+        cbxModel.addElement(currentCode);
+        cbxExamCodes = new JComboBox<>(cbxModel);
+        cbxExamCodes.setPreferredSize(new Dimension(150, 25));
+
+        JButton btnAddCode = new JButton("➕ Thêm Mã");
+        JButton btnDelCode = new JButton("❌ Xóa Mã");
+        pnlCodes.add(cbxExamCodes);
+        pnlCodes.add(btnAddCode);
+        pnlCodes.add(btnDelCode);
 
         // 1. Nhập số câu
         JPanel pnlInput = new JPanel(new FlowLayout(FlowLayout.LEFT));
@@ -46,8 +73,12 @@ public class AnswerKeyDialog extends JDialog {
         pnlInput.add(new JLabel(" Câu Phần II:")); txtP2 = new JTextField("4", 3); pnlInput.add(txtP2);
         pnlInput.add(new JLabel(" Câu Phần III:")); txtP3 = new JTextField("6", 3); pnlInput.add(txtP3);
 
-        JButton btnApply = new JButton("Cập nhật bảng");
-        btnApply.addActionListener(e -> updateTable());
+        JButton btnApply = new JButton("Cập nhật số câu");
+        btnApply.addActionListener(e -> {
+            saveUIToCache();
+            updateTable();
+            loadUIFromCache();
+        });
         pnlInput.add(btnApply);
 
         // 2. Nhập Barem điểm và hiển thị Tổng điểm
@@ -70,28 +101,124 @@ public class AnswerKeyDialog extends JDialog {
         pnlScores.add(pnlBaremInputs, BorderLayout.CENTER);
         pnlScores.add(lblTotalPossibleScore, BorderLayout.EAST);
 
+        pnlTopContainer.add(pnlCodes);
         pnlTopContainer.add(pnlInput);
         pnlTopContainer.add(pnlScores);
         add(pnlTopContainer, BorderLayout.NORTH);
 
         // 3. Bảng nhập đáp án
-        tableModel = new DefaultTableModel(new String[]{"STT", "Phần", "Đáp án đúng"}, 0);
+        tableModel = new DefaultTableModel(new String[]{"STT", "Phần", "Đáp án đúng (" + currentCode + ")"}, 0);
         tblAnswers = new JTable(tableModel);
         add(new JScrollPane(tblAnswers), BorderLayout.CENTER);
 
         // 4. Nút chức năng
         JPanel pnlBottom = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        btnImport = new JButton("Import Excel (Hoặc Kéo Thả)");
+        btnImport = new JButton("Import Excel Cho Mã Này");
         btnImport.addActionListener(e -> importFromExcel());
-        btnSave = new JButton("Lưu cấu hình & Đóng");
+        btnSave = new JButton("Lưu tất cả mã đề & Đóng");
         pnlBottom.add(btnImport);
         pnlBottom.add(btnSave);
         add(pnlBottom, BorderLayout.SOUTH);
 
+        // --- SỰ KIỆN QUẢN LÝ MÃ ĐỀ ---
+        cbxExamCodes.addActionListener(e -> {
+            if (isUpdatingCombo) return;
+            if (cbxExamCodes.getSelectedItem() != null) {
+                // Tự động gỡ focus khỏi bảng để lưu dữ liệu đang gõ dở
+                if (tblAnswers.isEditing()) tblAnswers.getCellEditor().stopCellEditing();
+
+                saveUIToCache(); // Lưu bảng hiện tại vào bộ nhớ
+                currentCode = cbxExamCodes.getSelectedItem().toString(); // Đổi mã
+                tblAnswers.getColumnModel().getColumn(2).setHeaderValue("Đáp án đúng (" + currentCode + ")");
+                tblAnswers.getTableHeader().repaint();
+
+                updateTable(); // Vẽ lại khung bảng
+                loadUIFromCache(); // Load dữ liệu của mã mới lên
+            }
+        });
+
+        btnAddCode.addActionListener(e -> {
+            String newCode = JOptionPane.showInputDialog(this, "Nhập tên mã đề mới (VD: Độ Mixi):");
+            if (newCode != null && !newCode.trim().isEmpty() && !uiCache.containsKey(newCode.trim())) {
+                newCode = newCode.trim();
+                uiCache.put(newCode, new HashMap<>());
+                isUpdatingCombo = true;
+                cbxModel.addElement(newCode);
+                isUpdatingCombo = false;
+                cbxExamCodes.setSelectedItem(newCode); // Tự động switch sang mã mới
+            }
+        });
+
+        btnDelCode.addActionListener(e -> {
+            if (cbxModel.getSize() <= 1) {
+                JOptionPane.showMessageDialog(this, "Phải giữ lại ít nhất 1 mã đề!");
+                return;
+            }
+            int confirm = JOptionPane.showConfirmDialog(this, "Xóa mã đề " + currentCode + " và toàn bộ đáp án của nó?", "Xác nhận", JOptionPane.YES_NO_OPTION);
+            if (confirm == JOptionPane.YES_OPTION) {
+                uiCache.remove(currentCode);
+                isUpdatingCombo = true;
+                cbxModel.removeElement(currentCode);
+                isUpdatingCombo = false;
+                cbxExamCodes.setSelectedIndex(0);
+            }
+        });
+
         addAutoCalculateListeners();
         enableDragAndDrop();
+        updateTable();
 
         setLocationRelativeTo(parent);
+    }
+
+    // --- LOGIC LƯU TRỮ VÀ HOÁN ĐỔI GIỮA CÁC MÃ ĐỀ ---
+    private void saveUIToCache() {
+        if (tblAnswers.isEditing()) tblAnswers.getCellEditor().stopCellEditing();
+        Map<String, String> answers = new HashMap<>();
+        int countP1 = 1, countP2 = 1, countP3 = 1;
+
+        for (int i = 0; i < tableModel.getRowCount(); i++) {
+            String phan = tableModel.getValueAt(i, 1).toString();
+            Object val = tableModel.getValueAt(i, 2);
+            String ans = (val == null) ? "" : val.toString().trim().toUpperCase();
+
+            if (phan.equals("I")) {
+                answers.put("P1_Câu_" + countP1++, ans);
+            } else if (phan.equals("II")) {
+                if (ans.length() == 4) {
+                    String n = ans.replace("D", "Đ").replace("T", "Đ").replace("F", "S");
+                    answers.put("P2_Câu_" + countP2 + "_a", String.valueOf(n.charAt(0)));
+                    answers.put("P2_Câu_" + countP2 + "_b", String.valueOf(n.charAt(1)));
+                    answers.put("P2_Câu_" + countP2 + "_c", String.valueOf(n.charAt(2)));
+                    answers.put("P2_Câu_" + countP2 + "_d", String.valueOf(n.charAt(3)));
+                }
+                countP2++;
+            } else if (phan.equals("III")) {
+                answers.put("P3_Câu_" + countP3++, ans);
+            }
+        }
+        uiCache.put(currentCode, answers);
+    }
+
+    private void loadUIFromCache() {
+        Map<String, String> answers = uiCache.getOrDefault(currentCode, new HashMap<>());
+        int countP1 = 1, countP2 = 1, countP3 = 1;
+
+        for (int i = 0; i < tableModel.getRowCount(); i++) {
+            String phan = tableModel.getValueAt(i, 1).toString();
+            if (phan.equals("I")) {
+                tableModel.setValueAt(answers.getOrDefault("P1_Câu_" + countP1++, ""), i, 2);
+            } else if (phan.equals("II")) {
+                String a = answers.getOrDefault("P2_Câu_" + countP2 + "_a", "");
+                String b = answers.getOrDefault("P2_Câu_" + countP2 + "_b", "");
+                String c = answers.getOrDefault("P2_Câu_" + countP2 + "_c", "");
+                String d = answers.getOrDefault("P2_Câu_" + countP2 + "_d", "");
+                tableModel.setValueAt(a + b + c + d, i, 2);
+                countP2++;
+            } else if (phan.equals("III")) {
+                tableModel.setValueAt(answers.getOrDefault("P3_Câu_" + countP3++, ""), i, 2);
+            }
+        }
     }
 
     private void addAutoCalculateListeners() {
@@ -100,93 +227,43 @@ public class AnswerKeyDialog extends JDialog {
             public void removeUpdate(DocumentEvent e) { calculateTotalPossibleScore(); }
             public void changedUpdate(DocumentEvent e) { calculateTotalPossibleScore(); }
         };
-
-        txtP1.getDocument().addDocumentListener(dl);
-        txtP2.getDocument().addDocumentListener(dl);
-        txtP3.getDocument().addDocumentListener(dl);
-
-        txtScoreP1.getDocument().addDocumentListener(dl);
-        txtScoreP3.getDocument().addDocumentListener(dl);
-        txtScoreP2_4.getDocument().addDocumentListener(dl);
+        txtP1.getDocument().addDocumentListener(dl); txtP2.getDocument().addDocumentListener(dl); txtP3.getDocument().addDocumentListener(dl);
+        txtScoreP1.getDocument().addDocumentListener(dl); txtScoreP3.getDocument().addDocumentListener(dl); txtScoreP2_4.getDocument().addDocumentListener(dl);
     }
 
     private void calculateTotalPossibleScore() {
         try {
-            int n1 = Integer.parseInt(txtP1.getText().trim());
-            int n2 = Integer.parseInt(txtP2.getText().trim());
-            int n3 = Integer.parseInt(txtP3.getText().trim());
-
-            double s1 = Double.parseDouble(txtScoreP1.getText().trim());
-            double s2Max = Double.parseDouble(txtScoreP2_4.getText().trim());
-            double s3 = Double.parseDouble(txtScoreP3.getText().trim());
-
-            double total = (n1 * s1) + (n2 * s2Max) + (n3 * s3);
-            total = Math.round(total * 100.0) / 100.0;
-
+            int n1 = Integer.parseInt(txtP1.getText().trim()); int n2 = Integer.parseInt(txtP2.getText().trim()); int n3 = Integer.parseInt(txtP3.getText().trim());
+            double s1 = Double.parseDouble(txtScoreP1.getText().trim()); double s2Max = Double.parseDouble(txtScoreP2_4.getText().trim()); double s3 = Double.parseDouble(txtScoreP3.getText().trim());
+            double total = Math.round(((n1 * s1) + (n2 * s2Max) + (n3 * s3)) * 100.0) / 100.0;
             lblTotalPossibleScore.setText("TỔNG ĐIỂM: " + total);
-
-            if (total > 10.001) {
-                lblTotalPossibleScore.setForeground(Color.RED);
-            } else if (Math.abs(total - 10.0) < 0.001) {
-                lblTotalPossibleScore.setForeground(new Color(0, 150, 0));
-            } else {
-                lblTotalPossibleScore.setForeground(Color.BLUE);
-            }
-
-        } catch (Exception e) {
-            lblTotalPossibleScore.setText("LỖI NHẬP LIỆU");
-            lblTotalPossibleScore.setForeground(Color.GRAY);
-        }
+            if (total > 10.001) lblTotalPossibleScore.setForeground(Color.RED);
+            else if (Math.abs(total - 10.0) < 0.001) lblTotalPossibleScore.setForeground(new Color(0, 150, 0));
+            else lblTotalPossibleScore.setForeground(Color.BLUE);
+        } catch (Exception e) { lblTotalPossibleScore.setText("LỖI NHẬP LIỆU"); }
     }
 
     private void updateTable() {
         try {
-            List<String> oldP1 = new ArrayList<>();
-            List<String> oldP2 = new ArrayList<>();
-            List<String> oldP3 = new ArrayList<>();
-
-            for (int i = 0; i < tableModel.getRowCount(); i++) {
-                String phan = tableModel.getValueAt(i, 1).toString();
-                Object val = tableModel.getValueAt(i, 2);
-                String ans = (val == null) ? "" : val.toString();
-                if (phan.equals("I")) oldP1.add(ans);
-                else if (phan.equals("II")) oldP2.add(ans);
-                else if (phan.equals("III")) oldP3.add(ans);
-            }
-
             int p1 = Integer.parseInt(txtP1.getText().trim());
             int p2 = Integer.parseInt(txtP2.getText().trim());
             int p3 = Integer.parseInt(txtP3.getText().trim());
 
             tableModel.setRowCount(0);
-            for (int i = 1; i <= p1; i++) {
-                String ans = (i <= oldP1.size()) ? oldP1.get(i - 1) : "";
-                tableModel.addRow(new Object[]{i, "I", ans});
-            }
-            for (int i = 1; i <= p2; i++) {
-                String ans = (i <= oldP2.size()) ? oldP2.get(i - 1) : "";
-                tableModel.addRow(new Object[]{i + p1, "II", ans});
-            }
-            for (int i = 1; i <= p3; i++) {
-                String ans = (i <= oldP3.size()) ? oldP3.get(i - 1) : "";
-                tableModel.addRow(new Object[]{i + p1 + p2, "III", ans});
-            }
-
+            for (int i = 1; i <= p1; i++) tableModel.addRow(new Object[]{i, "I", ""});
+            for (int i = 1; i <= p2; i++) tableModel.addRow(new Object[]{i + p1, "II", ""});
+            for (int i = 1; i <= p3; i++) tableModel.addRow(new Object[]{i + p1 + p2, "III", ""});
             calculateTotalPossibleScore();
-
-        } catch (NumberFormatException e) {
-            JOptionPane.showMessageDialog(this, "Lỗi: Vui lòng nhập số câu hợp lệ!");
-        }
+        } catch (NumberFormatException e) { JOptionPane.showMessageDialog(this, "Lỗi: Vui lòng nhập số câu hợp lệ!"); }
     }
 
+    // --- HÀM XUẤT CẤU HÌNH CUỐI CÙNG ---
     public ExamConfig getExamConfig() {
-        int actualP1 = 0, actualP2 = 0, actualP3 = 0;
-        for (int i = 0; i < tableModel.getRowCount(); i++) {
-            String p = tableModel.getValueAt(i, 1).toString();
-            if (p.equals("I")) actualP1++;
-            else if (p.equals("II")) actualP2++;
-            else if (p.equals("III")) actualP3++;
-        }
+        saveUIToCache(); // Chốt lần cuối trước khi save
+
+        int actualP1 = Integer.parseInt(txtP1.getText().trim());
+        int actualP2 = Integer.parseInt(txtP2.getText().trim());
+        int actualP3 = Integer.parseInt(txtP3.getText().trim());
 
         ExamConfig newConfig = new ExamConfig(actualP1, actualP2, actualP3);
 
@@ -199,27 +276,18 @@ public class AnswerKeyDialog extends JDialog {
             newConfig.setScoreP2_4(Double.parseDouble(txtScoreP2_4.getText().trim()));
         } catch (Exception e) {}
 
-        int countP1 = 1, countP2 = 1, countP3 = 1;
-        for (int i = 0; i < tableModel.getRowCount(); i++) {
-            String phan = tableModel.getValueAt(i, 1).toString();
-            Object val = tableModel.getValueAt(i, 2);
-            String ans = (val == null) ? "" : val.toString().trim().toUpperCase();
+        // Đổ toàn bộ mã đề từ cache vào Config
+        for (Map.Entry<String, Map<String, String>> entry : uiCache.entrySet()) {
+            String codeName = entry.getKey();
+            newConfig.addExamCode(codeName);
+            newConfig.setActiveCode(codeName); // Bật công tắc ghi cho mã này
 
-            if (phan.equals("I")) {
-                newConfig.setAnswer("P1_Câu_" + countP1++, ans);
-            } else if (phan.equals("II")) {
-                if (ans.length() == 4) {
-                    String n = ans.replace("D", "Đ").replace("T", "Đ").replace("F", "S");
-                    newConfig.setAnswer("P2_Câu_" + countP2 + "_a", String.valueOf(n.charAt(0)));
-                    newConfig.setAnswer("P2_Câu_" + countP2 + "_b", String.valueOf(n.charAt(1)));
-                    newConfig.setAnswer("P2_Câu_" + countP2 + "_c", String.valueOf(n.charAt(2)));
-                    newConfig.setAnswer("P2_Câu_" + countP2 + "_d", String.valueOf(n.charAt(3)));
-                }
-                countP2++;
-            } else if (phan.equals("III")) {
-                newConfig.setAnswer("P3_Câu_" + countP3++, ans);
+            for (Map.Entry<String, String> ansEntry : entry.getValue().entrySet()) {
+                newConfig.setAnswer(ansEntry.getKey(), ansEntry.getValue());
             }
         }
+
+        newConfig.setActiveCode("Mặc định"); // Trả về an toàn
         return newConfig;
     }
 
@@ -237,32 +305,36 @@ public class AnswerKeyDialog extends JDialog {
         txtScoreP2_3.setText(String.valueOf(config.getScoreP2_3()));
         txtScoreP2_4.setText(String.valueOf(config.getScoreP2_4()));
 
-        int p1 = config.getNumPart1();
-        int p2 = config.getNumPart2();
-        int p3 = config.getNumPart3();
+        // Tái tạo lại UI Cache từ ExamConfig
+        uiCache.clear();
+        isUpdatingCombo = true;
+        cbxModel.removeAllElements();
 
-        tableModel.setRowCount(0);
+        for (String code : config.getExamCodes()) {
+            cbxModel.addElement(code);
+            config.setActiveCode(code);
 
-        for (int i = 1; i <= p1; i++) {
-            String ans = config.getAnswer("P1_Câu_" + i);
-            tableModel.addRow(new Object[]{i, "I", ans != null ? ans : ""});
+            Map<String, String> answers = new HashMap<>();
+            // Quét lại toàn bộ đáp án của mã này bỏ vào cache
+            for(int i=1; i<=config.getNumPart1(); i++) answers.put("P1_Câu_"+i, config.getAnswer("P1_Câu_"+i));
+            for(int i=1; i<=config.getNumPart2(); i++) {
+                answers.put("P2_Câu_"+i+"_a", config.getAnswer("P2_Câu_"+i+"_a"));
+                answers.put("P2_Câu_"+i+"_b", config.getAnswer("P2_Câu_"+i+"_b"));
+                answers.put("P2_Câu_"+i+"_c", config.getAnswer("P2_Câu_"+i+"_c"));
+                answers.put("P2_Câu_"+i+"_d", config.getAnswer("P2_Câu_"+i+"_d"));
+            }
+            for(int i=1; i<=config.getNumPart3(); i++) answers.put("P3_Câu_"+i, config.getAnswer("P3_Câu_"+i));
+
+            uiCache.put(code, answers);
         }
 
-        for (int i = 1; i <= p2; i++) {
-            String a = config.getAnswer("P2_Câu_" + i + "_a");
-            String b = config.getAnswer("P2_Câu_" + i + "_b");
-            String c = config.getAnswer("P2_Câu_" + i + "_c");
-            String d = config.getAnswer("P2_Câu_" + i + "_d");
-            String combined = (a != null ? a : "") + (b != null ? b : "") + (c != null ? c : "") + (d != null ? d : "");
-            tableModel.addRow(new Object[]{i + p1, "II", combined});
+        isUpdatingCombo = false;
+        if (cbxModel.getSize() > 0) {
+            currentCode = cbxModel.getElementAt(0);
+            cbxExamCodes.setSelectedIndex(0);
+            updateTable();
+            loadUIFromCache();
         }
-
-        for (int i = 1; i <= p3; i++) {
-            String ans = config.getAnswer("P3_Câu_" + i);
-            tableModel.addRow(new Object[]{i + p1 + p2, "III", ans != null ? ans : ""});
-        }
-
-        calculateTotalPossibleScore();
     }
 
     private void processExcelFile(File file) {
@@ -271,6 +343,7 @@ public class AnswerKeyDialog extends JDialog {
 
             Sheet sheet = workbook.getSheetAt(0);
             tableModel.setRowCount(0);
+            updateTable(); // Tạo khung rỗng
 
             for (int i = 1; i <= sheet.getLastRowNum(); i++) {
                 Row row = sheet.getRow(i);
@@ -288,37 +361,34 @@ public class AnswerKeyDialog extends JDialog {
                     if (!qStr.isEmpty() && !phan.isEmpty() && !ans.isEmpty()) {
                         try {
                             int stt = (int) Double.parseDouble(qStr);
-                            tableModel.addRow(new Object[]{stt, phan, ans});
+                            int rowIndex = -1;
+                            if (phan.equals("I")) rowIndex = stt - 1;
+                            else if (phan.equals("II")) rowIndex = Integer.parseInt(txtP1.getText().trim()) + stt - 1;
+                            else if (phan.equals("III")) rowIndex = Integer.parseInt(txtP1.getText().trim()) + Integer.parseInt(txtP2.getText().trim()) + stt - 1;
+
+                            if (rowIndex >= 0 && rowIndex < tableModel.getRowCount()) {
+                                tableModel.setValueAt(ans, rowIndex, 2);
+                            }
                         } catch (NumberFormatException ignored) {}
                     }
                 }
             }
             calculateTotalPossibleScore();
-            JOptionPane.showMessageDialog(this, "Đã tự động điền đáp án từ file " + file.getName() + "!");
+            JOptionPane.showMessageDialog(this, "Đã tự động điền đáp án cho mã đề [" + currentCode + "] từ file Excel!");
         } catch (Exception e) {
             e.printStackTrace();
             JOptionPane.showMessageDialog(this, "Lỗi khi đọc file Excel: " + e.getMessage(), "Lỗi", JOptionPane.ERROR_MESSAGE);
         }
     }
 
-    // ==========================================================
-    // ĐÃ FIX: LƯU VÀ GỌI LẠI ĐƯỜNG DẪN THƯ MỤC KHI NHẬP EXCEL ĐÁP ÁN
-    // ==========================================================
     private void importFromExcel() {
         JFileChooser fileChooser = new JFileChooser();
-
-        // 1. Khởi tạo bộ nhớ (Preferences)
         Preferences prefs = Preferences.userRoot().node("ChamTracNghiem_N7");
-
-        // 2. Lấy vị trí đã lưu riêng cho mục Đáp Án (Mặc định mở thư mục Home)
         String lastDir = prefs.get("DIR_ANSWER_KEY", System.getProperty("user.home"));
         fileChooser.setCurrentDirectory(new File(lastDir));
 
         if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            // 3. Ghi nhớ lại vị trí thư mục vừa chọn vào Registry
             prefs.put("DIR_ANSWER_KEY", fileChooser.getSelectedFile().getParent());
-
-            // Xử lý file
             processExcelFile(fileChooser.getSelectedFile());
         }
     }
@@ -329,25 +399,13 @@ public class AnswerKeyDialog extends JDialog {
                 try {
                     evt.acceptDrop(DnDConstants.ACTION_COPY);
                     List<File> droppedFiles = (List<File>) evt.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
-
                     if (!droppedFiles.isEmpty()) {
                         File file = droppedFiles.get(0);
-                        String low = file.getName().toLowerCase();
-
-                        if (low.endsWith(".xlsx") || low.endsWith(".xls")) {
+                        if (file.getName().toLowerCase().endsWith(".xlsx") || file.getName().toLowerCase().endsWith(".xls")) {
                             processExcelFile(file);
-                        } else {
-                            JOptionPane.showMessageDialog(AnswerKeyDialog.this,
-                                    "Vui lòng kéo thả đúng file Excel (.xlsx hoặc .xls)!",
-                                    "Sai định dạng", JOptionPane.ERROR_MESSAGE);
                         }
                     }
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                    JOptionPane.showMessageDialog(AnswerKeyDialog.this,
-                            "Lỗi khi xử lý file: " + ex.getMessage(),
-                            "Lỗi", JOptionPane.ERROR_MESSAGE);
-                }
+                } catch (Exception ex) {}
             }
         });
     }
