@@ -139,6 +139,14 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
                                 stt, "AUTO", studentResults, threadConfig
                         );
 
+                        boolean hasWrongAnswers = false;
+                        for (model.OMRModels.AnswerRecord detail : newReport.details) {
+                            if (!detail.isCorrect) {
+                                hasWrongAnswers = true;
+                                break;
+                            }
+                        }
+
                         newReport.originalImagePath = file.getAbsolutePath();
                         newReport.studentName = fName;
                         newReport.studentSttFile = stt;
@@ -158,6 +166,9 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
 
                         newReport.statusMessage = baseStatus;
 
+                        // =========================================================
+                        // [BẢN VÁ AN TOÀN]: LOGIC COPY & XÓA FILE CHỐNG MẤT DỮ LIỆU
+                        // =========================================================
                         try {
                             File imageDir = new File("data/classes/" + currentClassRoom.className + "/images/" + currentSession.getExamName());
                             if (!imageDir.exists()) imageDir.mkdirs();
@@ -169,17 +180,33 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
                             }
 
                             File destFile = new File(imageDir, stt + originalExt);
-                            java.nio.file.Files.copy(file.toPath(), destFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                            File originalProcessed = new File(file.getAbsolutePath().replace(originalExt, "_processed" + originalExt));
+                            File destProcessed = new File(imageDir, stt + "_processed" + originalExt);
+
+                            // Kiểm tra xem file nguồn và file đích có bị trùng nhau không (Chấm lại bài cũ)
+                            boolean isSameSourceAndDest = file.getAbsolutePath().equals(destFile.getAbsolutePath());
+                            boolean isSameProcessed = originalProcessed.getAbsolutePath().equals(destProcessed.getAbsolutePath());
+
+                            if (!isSameSourceAndDest) {
+                                java.nio.file.Files.copy(file.toPath(), destFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                            }
                             newReport.imagePath = destFile.getAbsolutePath();
 
-                            File originalProcessed = new File(file.getAbsolutePath().replace(originalExt, "_processed" + originalExt));
                             if (originalProcessed.exists()) {
-                                if (autoClean && !hasError && !hasWarning) {
-                                    originalProcessed.delete();
+                                // Nếu bài làm đúng 100% không tì vết -> Xóa rác
+                                if (autoClean && !hasError && !hasWarning && !hasWrongAnswers) {
+                                    originalProcessed.delete(); // Xóa temp ở Desktop
+                                    if (!isSameProcessed && destProcessed.exists()) {
+                                        destProcessed.delete(); // Xóa luôn file trong data nếu có
+                                    }
                                 } else {
-                                    File destProcessed = new File(imageDir, stt + "_processed" + originalExt);
-                                    java.nio.file.Files.copy(originalProcessed.toPath(), destProcessed.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                                    originalProcessed.delete();
+                                    // Bắt buộc giữ lại file đối chiếu
+                                    if (!isSameProcessed) {
+                                        // Chỉ copy và xóa temp nếu kéo từ Desktop vào
+                                        java.nio.file.Files.copy(originalProcessed.toPath(), destProcessed.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                                        originalProcessed.delete();
+                                    }
+                                    // NẾU LÀ CÙNG 1 FILE (isSameProcessed = true): KHÔNG LÀM GÌ CẢ ĐỂ GIỮ NGUYÊN ẢNH!
                                 }
                             }
                         } catch (Exception ex) {
@@ -194,7 +221,6 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
                             currentSession.addReport(newReport);
                         }
 
-                        // Truyền cả STT về để UI gỡ bỏ file khỏi hàng đợi
                         publish(new Object[]{"UPDATE", stt});
                     }
                 } catch (Throwable t) {
@@ -239,7 +265,6 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
                 view.getProgressBar().setValue(0);
             }
             else if (chunk[0].equals("UPDATE")) {
-                // [FIX] Lấy STT và xóa ảnh khỏi hàng đợi ngay khi chấm xong
                 String stt = (String) chunk[1];
                 assignedFiles.remove(stt);
 

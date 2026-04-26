@@ -78,39 +78,39 @@ public class DataManager {
         }).start();
     }
 
-    // =========================================================
-    // THUẬT TOÁN DỌN DẸP SÂU
-    // =========================================================
     public static void performDeepCleanup(ProgressListener listener) throws IOException {
         Path classesDir = Paths.get("data/classes");
         if (!Files.exists(classesDir)) return;
 
-        List<Path> processedFiles = new ArrayList<>();
-        try (Stream<Path> walk = Files.walk(classesDir)) {
-            processedFiles = walk
-                    .filter(p -> !Files.isDirectory(p) && p.getFileName().toString().contains("_processed."))
-                    .collect(Collectors.toList());
-        }
-
         List<Path> orphanedDirs = new ArrayList<>();
+        List<model.OMRModels.ExamReport> allValidReports = new ArrayList<>();
+
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(classesDir)) {
             for (Path entry : stream) {
                 if (Files.isDirectory(entry) && !entry.getFileName().toString().equals("trash")) {
                     String className = entry.getFileName().toString();
                     Path classDatFile = classesDir.resolve(className + ".dat");
+
                     if (!Files.exists(classDatFile)) {
                         orphanedDirs.add(entry);
                     } else {
                         Path imagesDir = entry.resolve("images");
                         Path examsDir = entry.resolve("exams");
+
+                        List<String> exams = listSavedExams(className);
+                        for (String exam : exams) {
+                            ExamSession s = loadSession(exam, className);
+                            if (s != null && s.getReports() != null) {
+                                allValidReports.addAll(s.getReports());
+                            }
+                        }
+
                         if (Files.exists(imagesDir)) {
                             try (DirectoryStream<Path> imgStream = Files.newDirectoryStream(imagesDir)) {
                                 for (Path examImgFolder : imgStream) {
                                     if (Files.isDirectory(examImgFolder)) {
                                         String examName = examImgFolder.getFileName().toString();
-                                        if (!Files.exists(examsDir.resolve(examName + ".dat"))) {
-                                            orphanedDirs.add(examImgFolder);
-                                        }
+                                        if (!Files.exists(examsDir.resolve(examName + ".dat"))) orphanedDirs.add(examImgFolder);
                                     }
                                 }
                             }
@@ -120,7 +120,35 @@ public class DataManager {
             }
         }
 
-        int totalTasks = orphanedDirs.size() + processedFiles.size();
+        List<Path> processedFiles = new ArrayList<>();
+        try (Stream<Path> walk = Files.walk(classesDir)) {
+            processedFiles = walk.filter(p -> !Files.isDirectory(p) && p.getFileName().toString().contains("_processed.")).collect(Collectors.toList());
+        }
+
+        List<Path> filesToDelete = new ArrayList<>();
+        for (Path p : processedFiles) {
+            String pAbs = p.normalize().toAbsolutePath().toString();
+            boolean shouldKeep = false;
+
+            for (model.OMRModels.ExamReport r : allValidReports) {
+                if (r.imagePath != null) {
+                    String rProcessed = r.imagePath.replace(".jpg", "_processed.jpg")
+                            .replace(".png", "_processed.png")
+                            .replace(".jpeg", "_processed.jpeg");
+                    String rAbs = Paths.get(rProcessed).normalize().toAbsolutePath().toString();
+
+                    if (pAbs.equalsIgnoreCase(rAbs)) {
+                        boolean hasErr = r.statusMessage != null && r.statusMessage.contains("❌");
+                        boolean hasWarn = r.statusMessage != null && r.statusMessage.contains("⚠️");
+                        if (hasErr || hasWarn) shouldKeep = true;
+                        break;
+                    }
+                }
+            }
+            if (!shouldKeep) filesToDelete.add(p);
+        }
+
+        int totalTasks = orphanedDirs.size() + filesToDelete.size();
         int current = 0;
 
         if (totalTasks == 0) {
@@ -135,10 +163,10 @@ public class DataManager {
             deleteDirectoryRecursively(dir);
         }
 
-        for (Path p : processedFiles) {
+        for (Path p : filesToDelete) {
             if (listener != null && listener.isCanceled()) return;
             current++;
-            if (listener != null) listener.onProgress(current, totalTasks, "Đang xóa ảnh: " + p.getFileName().toString());
+            if (listener != null) listener.onProgress(current, totalTasks, "Đang xóa ảnh rác: " + p.getFileName().toString());
             Files.deleteIfExists(p);
         }
     }
