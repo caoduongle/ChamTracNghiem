@@ -818,6 +818,28 @@ public class MainController {
                 boolean autoClean = service.DataManager.isAutoCleanProcessed();
 
                 publish(new Object[]{"INIT_PROGRESS"});
+                // =========================================================================
+                // [THUẬT TOÁN ĐO LƯỜNG AN TOÀN CHO MÁY YẾU]
+                // =========================================================================
+                int coreCount = Runtime.getRuntime().availableProcessors();
+                long maxMemoryMB = Runtime.getRuntime().maxMemory() / (1024 * 1024);
+
+                int safeThreads = 1;
+                if (useMultiThread) {
+                    if (maxMemoryMB < 1500) {
+                        // Máy RAM siêu yếu (cấp cho Java < 1.5GB): Chạy tối đa 2 luồng
+                        safeThreads = Math.min(2, coreCount);
+                    } else if (maxMemoryMB < 3000) {
+                        // Máy RAM trung bình (cấp cho Java < 3GB): Chạy tối đa 4 luồng
+                        safeThreads = Math.min(4, coreCount);
+                    } else {
+                        // Máy khỏe (như HP Victus của bạn): Bung xõa hết nhân CPU
+                        safeThreads = coreCount;
+                    }
+                }
+
+                // Đảm bảo lúc nào cũng có ít nhất 1 luồng chạy
+                safeThreads = Math.max(1, safeThreads);
 
                 // Khởi tạo Thread Pool với số luồng bằng số nhân CPU nếu bật đa luồng
                 ExecutorService executor = useMultiThread

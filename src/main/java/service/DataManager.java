@@ -9,6 +9,7 @@ import java.nio.file.*;
 import java.util.zip.*;
 import java.util.stream.Collectors;
 import java.util.Comparator;
+import java.util.stream.Stream;
 
 public class DataManager {
     private static final long THIRTY_DAYS_MS = 30L * 24 * 60 * 60 * 1000;
@@ -57,47 +58,39 @@ public class DataManager {
     public static void setAutoCleanProcessed(boolean enabled) { sysPrefs.putBoolean("auto_clean_processed", enabled); }
 
     // =========================================================
-    // [NEW] THUẬT TOÁN DỌN DẸP SÂU (DEEP CLEANUP)
+    // [FIX]: THUẬT TOÁN DỌN DẸP SÂU (CHUẨN TIẾN ĐỘ 100%)
     // =========================================================
     public static void performDeepCleanup(ProgressListener listener) throws IOException {
         Path classesDir = Paths.get("data/classes");
         if (!Files.exists(classesDir)) return;
 
-        int current = 0;
+        // BƯỚC 1: Đếm tổng số file ảnh rác (_processed)
+        List<Path> processedFiles = new ArrayList<>();
+        try (Stream<Path> walk = Files.walk(classesDir)) {
+            processedFiles = walk
+                    .filter(p -> !Files.isDirectory(p) && p.getFileName().toString().contains("_processed."))
+                    .collect(Collectors.toList());
+        }
 
-        // BƯỚC 1: Xóa thư mục của các Lớp đã bị xóa vĩnh viễn hoặc nằm trong thùng rác
+        // BƯỚC 2: Tìm các thư mục Lớp/Đề mồ côi
+        List<Path> orphanedDirs = new ArrayList<>();
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(classesDir)) {
             for (Path entry : stream) {
                 if (Files.isDirectory(entry) && !entry.getFileName().toString().equals("trash")) {
                     String className = entry.getFileName().toString();
                     Path classDatFile = classesDir.resolve(className + ".dat");
                     if (!Files.exists(classDatFile)) {
-                        deleteDirectoryRecursively(entry);
-                        if (listener != null) listener.onProgress(++current, 100, "Xóa dữ liệu lớp mồ côi: " + className);
-                    }
-                }
-            }
-        }
-
-        // BƯỚC 2: Quét các Lớp hợp lệ để xóa thư mục ảnh của các Đề thi đã bị xóa
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(classesDir)) {
-            for (Path entry : stream) {
-                if (Files.isDirectory(entry) && !entry.getFileName().toString().equals("trash")) {
-                    String className = entry.getFileName().toString();
-                    Path classDatFile = classesDir.resolve(className + ".dat");
-                    if (Files.exists(classDatFile)) {
+                        orphanedDirs.add(entry); // Lớp mồ côi
+                    } else {
                         Path imagesDir = entry.resolve("images");
                         Path examsDir = entry.resolve("exams");
-
                         if (Files.exists(imagesDir)) {
                             try (DirectoryStream<Path> imgStream = Files.newDirectoryStream(imagesDir)) {
                                 for (Path examImgFolder : imgStream) {
                                     if (Files.isDirectory(examImgFolder)) {
                                         String examName = examImgFolder.getFileName().toString();
-                                        Path examDatFile = examsDir.resolve(examName + ".dat");
-                                        if (!Files.exists(examDatFile)) {
-                                            deleteDirectoryRecursively(examImgFolder);
-                                            if (listener != null) listener.onProgress(++current, 100, "Xóa dữ liệu đề mồ côi: " + examName);
+                                        if (!Files.exists(examsDir.resolve(examName + ".dat"))) {
+                                            orphanedDirs.add(examImgFolder); // Đề mồ côi
                                         }
                                     }
                                 }
@@ -108,27 +101,40 @@ public class DataManager {
             }
         }
 
-        // BƯỚC 3: Xóa các file ảnh _processed.jpg (như cũ)
-        List<Path> processedFiles = Files.walk(classesDir)
-                .filter(p -> !Files.isDirectory(p) && p.getFileName().toString().contains("_processed."))
-                .collect(Collectors.toList());
+        // BƯỚC 3: Tính tổng số công việc để thanh tiến độ chạy mượt
+        int totalTasks = orphanedDirs.size() + processedFiles.size();
+        int current = 0;
 
-        int totalProcessed = processedFiles.size();
-        for (Path p : processedFiles) {
-            if (listener != null && listener.isCanceled()) break;
+        if (totalTasks == 0) {
+            if (listener != null) listener.onProgress(100, 100, "Hệ thống sạch sẽ, không có rác.");
+            return;
+        }
+
+        // Xóa thư mục mồ côi
+        for (Path dir : orphanedDirs) {
+            if (listener != null && listener.isCanceled()) return;
             current++;
+            if (listener != null) listener.onProgress(current, totalTasks, "Đang dọn sạch dữ liệu cũ: " + dir.getFileName().toString());
+            deleteDirectoryRecursively(dir);
+        }
+
+        // Xóa ảnh rác
+        for (Path p : processedFiles) {
+            if (listener != null && listener.isCanceled()) return;
+            current++;
+            if (listener != null) listener.onProgress(current, totalTasks, "Đang xóa ảnh: " + p.getFileName().toString());
             Files.deleteIfExists(p);
-            if (listener != null) listener.onProgress(current, current + totalProcessed, "Đang dọn ảnh rác: " + p.getFileName().toString());
         }
     }
 
-    // Hàm đệ quy hỗ trợ xóa thư mục (Xóa file bên trong trước, xóa thư mục sau)
+    // Hàm đệ quy hỗ trợ xóa thư mục có bọc try-with-resources để chống rò rỉ bộ nhớ
     private static void deleteDirectoryRecursively(Path path) throws IOException {
         if (Files.exists(path)) {
-            Files.walk(path)
-                    .sorted(Comparator.reverseOrder())
-                    .map(Path::toFile)
-                    .forEach(File::delete);
+            try (Stream<Path> walk = Files.walk(path)) {
+                walk.sorted(Comparator.reverseOrder())
+                        .map(Path::toFile)
+                        .forEach(File::delete);
+            }
         }
     }
     // =========================================================
@@ -138,7 +144,11 @@ public class DataManager {
         Path sourceDirPath = Paths.get("data");
         if (!Files.exists(sourceDirPath)) return;
 
-        List<Path> allFiles = Files.walk(sourceDirPath).filter(path -> !Files.isDirectory(path)).collect(Collectors.toList());
+        List<Path> allFiles;
+        try (Stream<Path> walk = Files.walk(sourceDirPath)) {
+            allFiles = walk.filter(path -> !Files.isDirectory(path)).collect(Collectors.toList());
+        }
+
         int totalFiles = allFiles.size();
         int current = 0;
 

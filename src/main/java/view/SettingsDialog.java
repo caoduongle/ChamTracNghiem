@@ -96,7 +96,6 @@ public class SettingsDialog extends JDialog {
             }
         });
 
-        // [FIX]: Bọc HTML để ép Emoji hiện màu cho cái chổi & Gọi hàm performDeepCleanup
         JButton btnClearCache = new JButton("<html><span style=\"font-family: 'Segoe UI Emoji'\">🧹</span> Dọn dẹp rác</html>");
         btnClearCache.setToolTipText("Xóa toàn bộ các ảnh xử lý thừa và dọn dẹp các thư mục rác của Lớp/Đề thi đã bị xóa.");
         btnClearCache.addActionListener(e -> {
@@ -283,8 +282,11 @@ public class SettingsDialog extends JDialog {
                 task.process(new DataManager.ProgressListener() {
                     @Override
                     public void onProgress(int current, int total, String fileName) {
-                        int progress = (int) ((double) current / total * 100);
-                        publish(new Object[]{progress, "Đang xử lý: " + fileName});
+                        // Tính toán an toàn không bao giờ bị / zero
+                        int progress = (total > 0) ? (int) ((double) current / total * 100) : 100;
+                        // Ép giới hạn 0-100 để không crash ProgressMonitor
+                        progress = Math.max(0, Math.min(100, progress));
+                        publish(new Object[]{progress, fileName}); // Đã fix text hiển thị gọn gàng
                     }
                     @Override
                     public boolean isCanceled() { return pm.isCanceled(); }
