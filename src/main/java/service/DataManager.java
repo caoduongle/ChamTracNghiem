@@ -5,10 +5,22 @@ import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.prefs.Preferences;
+import java.nio.file.*;
+import java.util.zip.*;
 
 public class DataManager {
-    // Thời gian lưu thùng rác: 30 ngày
+    // --- KHAI BÁO CÁC BIẾN HỆ THỐNG Ở ĐẦU FILE ---
     private static final long THIRTY_DAYS_MS = 30L * 24 * 60 * 60 * 1000;
+    private static final Preferences sysPrefs = Preferences.userRoot().node("ChamTracNghiem_N7_SystemSettings");
+    private static final String PREF_FILE = "data/tutorial_hidden.flag";
+    private static final String CLASS_DIR = "data/classes/";
+    private static final String CLASS_TRASH_DIR = "data/classes/trash/";
+
+    // --- INTERFACE HỖ TRỢ THANH TIẾN ĐỘ ---
+    public interface ProgressListener {
+        void onProgress(int current, int total, String fileName);
+        boolean isCanceled(); // Kiểm tra nếu người dùng nhấn Cancel
+    }
 
     public static class TrashedItem {
         public String originalName;
@@ -26,6 +38,75 @@ public class DataManager {
         }
     }
 
+    // --- CÀI ĐẶT HỆ THỐNG ---
+    public static boolean isSoundEnabled() { return sysPrefs.getBoolean("sound_enabled", true); }
+    public static void setSoundEnabled(boolean enabled) { sysPrefs.putBoolean("sound_enabled", enabled); }
+    public static String getDefaultExportPath() { return sysPrefs.get("default_export_path", System.getProperty("user.home") + File.separator + "Documents"); }
+    public static void setDefaultExportPath(String path) { sysPrefs.put("default_export_path", path); }
+    public static boolean isAutoSavePosition() { return sysPrefs.getBoolean("auto_save_pos", true); }
+    public static void setAutoSavePosition(boolean enabled) { sysPrefs.putBoolean("auto_save_pos", enabled); }
+    public static boolean isDarkMode() { return sysPrefs.getBoolean("dark_mode", false); }
+    public static void setDarkMode(boolean enabled) { sysPrefs.putBoolean("dark_mode", enabled); }
+
+    // --- LOGIC SAO LƯU (BACKUP) CÓ TIẾN ĐỘ ---
+    public static void backupData(File targetZip, ProgressListener listener) throws IOException {
+        Path sourceDirPath = Paths.get("data");
+        if (!Files.exists(sourceDirPath)) return;
+
+        List<Path> allFiles = Files.walk(sourceDirPath)
+                .filter(path -> !Files.isDirectory(path))
+                .collect(java.util.stream.Collectors.toList());
+
+        int totalFiles = allFiles.size();
+        int current = 0;
+
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(targetZip))) {
+            for (Path path : allFiles) {
+                if (listener != null && listener.isCanceled()) throw new IOException("Người dùng đã hủy.");
+                current++;
+                String fileName = sourceDirPath.relativize(path).toString();
+                if (listener != null) listener.onProgress(current, totalFiles, fileName);
+
+                ZipEntry zipEntry = new ZipEntry(fileName);
+                zos.putNextEntry(zipEntry);
+                Files.copy(path, zos);
+                zos.closeEntry();
+            }
+        }
+    }
+
+    // --- LOGIC PHỤC HỒI (RESTORE) CÓ TIẾN ĐỘ ---
+    public static void restoreData(File zipFile, ProgressListener listener) throws IOException {
+        Path destDirPath = Paths.get("data");
+        if (!Files.exists(destDirPath)) Files.createDirectories(destDirPath);
+
+        int totalEntries = 0;
+        try (ZipFile zip = new ZipFile(zipFile)) { totalEntries = zip.size(); }
+
+        int current = 0;
+        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipFile))) {
+            ZipEntry entry = zis.getNextEntry();
+            while (entry != null) {
+                if (listener != null && listener.isCanceled()) throw new IOException("Người dùng đã hủy.");
+                current++;
+                Path newPath = destDirPath.resolve(entry.getName());
+                if (listener != null) listener.onProgress(current, totalEntries, entry.getName());
+
+                if (entry.isDirectory()) {
+                    Files.createDirectories(newPath);
+                } else {
+                    if (newPath.getParent() != null && Files.notExists(newPath.getParent())) {
+                        Files.createDirectories(newPath.getParent());
+                    }
+                    Files.copy(zis, newPath, StandardCopyOption.REPLACE_EXISTING);
+                }
+                zis.closeEntry();
+                entry = zis.getNextEntry();
+            }
+        }
+    }
+
+    // --- QUẢN LÝ LỚP HỌC & ĐỀ THI ---
     private static String getExamDir(String className) { return "data/classes/" + className + "/exams/"; }
     private static String getTrashDir(String className) { return "data/classes/" + className + "/trash/"; }
 
@@ -33,7 +114,6 @@ public class DataManager {
         try {
             File dir = new File(getExamDir(className));
             if (!dir.exists()) dir.mkdirs();
-            // [FIX]: Sử dụng Try-with-resources để tự động dọn dẹp bộ nhớ (Memory Leak) ngay cả khi lỗi
             try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(getExamDir(className) + session.getExamName() + ".dat"))) {
                 oos.writeObject(session);
             }
@@ -52,9 +132,7 @@ public class DataManager {
         File dir = new File(getExamDir(className));
         if (dir.exists()) {
             for (File f : dir.listFiles()) {
-                if (f.isFile() && f.getName().endsWith(".dat")) {
-                    exams.add(f.getName().replace(".dat", ""));
-                }
+                if (f.isFile() && f.getName().endsWith(".dat")) exams.add(f.getName().replace(".dat", ""));
             }
         }
         return exams;
@@ -82,10 +160,8 @@ public class DataManager {
                     try {
                         String[] parts = f.getName().split("\\.dat_deleted_");
                         long deleteTime = Long.parseLong(parts[1]);
-                        long elapsed = now - deleteTime;
-                        int daysLeft = (int) ((THIRTY_DAYS_MS - elapsed) / (24 * 60 * 60 * 1000));
-                        if (daysLeft < 0) daysLeft = 0;
-                        trashed.add(new TrashedItem(parts[0], f.getName(), daysLeft, f.lastModified(), deleteTime));
+                        int daysLeft = (int) ((THIRTY_DAYS_MS - (now - deleteTime)) / (24 * 60 * 60 * 1000));
+                        trashed.add(new TrashedItem(parts[0], f.getName(), Math.max(0, daysLeft), f.lastModified(), deleteTime));
                     } catch (Exception e) { }
                 }
             }
@@ -98,7 +174,6 @@ public class DataManager {
         if (!src.exists()) return;
 
         long originalTime = src.lastModified();
-
         String originalName = trashFileName.split("\\.dat_deleted_")[0];
         String baseName = originalName;
         File dest = new File(getExamDir(className) + baseName + ".dat");
@@ -112,10 +187,7 @@ public class DataManager {
 
         if (src.renameTo(dest)) {
             ExamSession session = loadSession(baseName, className);
-            if (session != null) {
-                session.setExamName(baseName);
-                saveSession(session, className);
-            }
+            if (session != null) { session.setExamName(baseName); saveSession(session, className); }
             dest.setLastModified(originalTime);
         }
     }
@@ -127,10 +199,7 @@ public class DataManager {
             long originalTime = src.lastModified();
             if (src.renameTo(dest)) {
                 ExamSession session = loadSession(newName, className);
-                if (session != null) {
-                    session.setExamName(newName);
-                    saveSession(session, className);
-                }
+                if (session != null) { session.setExamName(newName); saveSession(session, className); }
                 dest.setLastModified(originalTime);
             }
         }
@@ -155,16 +224,9 @@ public class DataManager {
         }
     }
 
-    // ==========================================
-    // ============ QUẢN LÝ LỚP HỌC =============
-    // ==========================================
-    private static final String CLASS_DIR = "data/classes/";
-    private static final String CLASS_TRASH_DIR = "data/classes/trash/";
-
     public static void saveClass(model.ClassRoom cr) {
         try {
             File dir = new File(CLASS_DIR); if (!dir.exists()) dir.mkdirs();
-            // [FIX]: Try-with-resources để chống leak
             try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(CLASS_DIR + cr.className + ".dat"))) {
                 oos.writeObject(cr);
             }
@@ -197,14 +259,9 @@ public class DataManager {
 
         if (oldFile.exists() && !newFile.exists()) {
             if (oldFile.renameTo(newFile)) {
-                if (oldDir.exists()) {
-                    oldDir.renameTo(newDir);
-                }
+                if (oldDir.exists()) oldDir.renameTo(newDir);
                 model.ClassRoom cr = loadClass(newName);
-                if (cr != null) {
-                    cr.className = newName;
-                    saveClass(cr);
-                }
+                if (cr != null) { cr.className = newName; saveClass(cr); }
             }
         }
     }
@@ -227,10 +284,8 @@ public class DataManager {
                     try {
                         String[] parts = f.getName().split("\\.dat_deleted_");
                         long deleteTime = Long.parseLong(parts[1]);
-                        long elapsed = now - deleteTime;
-                        int daysLeft = (int) ((THIRTY_DAYS_MS - elapsed) / (24 * 60 * 60 * 1000));
-                        if (daysLeft < 0) daysLeft = 0;
-                        trashed.add(new TrashedItem(parts[0], f.getName(), daysLeft, f.lastModified(), deleteTime));
+                        int daysLeft = (int) ((THIRTY_DAYS_MS - (now - deleteTime)) / (24 * 60 * 60 * 1000));
+                        trashed.add(new TrashedItem(parts[0], f.getName(), Math.max(0, daysLeft), f.lastModified(), deleteTime));
                     } catch (Exception e) { }
                 }
             }
@@ -248,18 +303,11 @@ public class DataManager {
         File dest = new File(CLASS_DIR + baseName + ".dat");
 
         int count = 1;
-        while (dest.exists()) {
-            count++;
-            baseName = originalName + " (" + count + ")";
-            dest = new File(CLASS_DIR + baseName + ".dat");
-        }
+        while (dest.exists()) { count++; baseName = originalName + " (" + count + ")"; dest = new File(CLASS_DIR + baseName + ".dat"); }
 
         if (src.renameTo(dest)) {
             model.ClassRoom cr = loadClass(baseName);
-            if (cr != null) {
-                cr.className = baseName;
-                saveClass(cr);
-            }
+            if (cr != null) { cr.className = baseName; saveClass(cr); }
             dest.setLastModified(originalTime);
         }
     }
@@ -283,47 +331,13 @@ public class DataManager {
         }
     }
 
-    // ==========================================
-    // ============ HƯỚNG DẪN SỬ DỤNG ===========
-    // ==========================================
-    private static final String PREF_FILE = "data/tutorial_hidden.flag";
-
-    // ĐÃ THÊM: Hàm lưu tùy chọn bật/tắt hướng dẫn
     public static void setTutorialPreference(boolean showTutorial) {
         try {
-            File dir = new File("data");
-            if (!dir.exists()) dir.mkdirs();
+            File dir = new File("data"); if (!dir.exists()) dir.mkdirs();
             File flagFile = new File(PREF_FILE);
-
-            if (showTutorial) {
-                if (flagFile.exists()) flagFile.delete(); // Xóa file cờ -> Sẽ hiện hướng dẫn
-            } else {
-                flagFile.createNewFile(); // Tạo file cờ -> Đánh dấu không hiện nữa
-            }
+            if (showTutorial) { if (flagFile.exists()) flagFile.delete(); } else { flagFile.createNewFile(); }
         } catch (Exception e) { e.printStackTrace(); }
     }
 
-    // ĐÃ SỬA: Kiểm tra xem file cờ có tồn tại không
-    public static boolean shouldShowTutorial() {
-        return !new File(PREF_FILE).exists();
-    }
-    // Thêm vào trong class DataManager
-    private static final Preferences sysPrefs = Preferences.userRoot().node("ChamTracNghiem_N7_SystemSettings");
-
-    public static boolean isAutoSavePosition() {
-        return sysPrefs.getBoolean("auto_save_pos", true); // Mặc định là bật
-    }
-
-    public static void setAutoSavePosition(boolean enabled) {
-        sysPrefs.putBoolean("auto_save_pos", enabled);
-    }
-
-    public static boolean isDarkMode() {
-        return sysPrefs.getBoolean("dark_mode", false); // Mặc định là sáng
-    }
-
-    public static void setDarkMode(boolean enabled) {
-        sysPrefs.putBoolean("dark_mode", enabled);
-    }
-
+    public static boolean shouldShowTutorial() { return !new File(PREF_FILE).exists(); }
 }

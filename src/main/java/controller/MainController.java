@@ -613,6 +613,11 @@ public class MainController {
 
     private void saveExcel(String defaultName, int type) {
         JFileChooser fileChooser = new JFileChooser();
+        // Ưu tiên đường dẫn trong Setting nếu người dùng đã cài
+        String defaultPath = service.DataManager.getDefaultExportPath();
+        fileChooser.setCurrentDirectory(new File(defaultPath));
+        fileChooser.setSelectedFile(new File(defaultName));
+
         Preferences prefs = Preferences.userRoot().node("ChamTracNghiem_N7");
         String lastDir = prefs.get("DIR_EXPORT", System.getProperty("user.home"));
         fileChooser.setCurrentDirectory(new File(lastDir));
@@ -913,6 +918,9 @@ public class MainController {
                 } else {
                     view.setStatusMessage("Hoàn tất quy trình chấm bài đa mã đề.");
                     JOptionPane.showMessageDialog(view, "Đã chấm xong! Dữ liệu đã được lưu riêng cho lớp " + currentClassRoom.className);
+                }
+                if (!isCancelled() && service.DataManager.isSoundEnabled()) {
+                    Toolkit.getDefaultToolkit().beep(); // Tiếng bíp hệ thống
                 }
             }
         };
