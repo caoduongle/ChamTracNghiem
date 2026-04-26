@@ -9,17 +9,15 @@ import java.nio.file.*;
 import java.util.zip.*;
 
 public class DataManager {
-    // --- KHAI BÁO CÁC BIẾN HỆ THỐNG Ở ĐẦU FILE ---
     private static final long THIRTY_DAYS_MS = 30L * 24 * 60 * 60 * 1000;
     private static final Preferences sysPrefs = Preferences.userRoot().node("ChamTracNghiem_N7_SystemSettings");
     private static final String PREF_FILE = "data/tutorial_hidden.flag";
     private static final String CLASS_DIR = "data/classes/";
     private static final String CLASS_TRASH_DIR = "data/classes/trash/";
 
-    // --- INTERFACE HỖ TRỢ THANH TIẾN ĐỘ ---
     public interface ProgressListener {
         void onProgress(int current, int total, String fileName);
-        boolean isCanceled(); // Kiểm tra nếu người dùng nhấn Cancel
+        boolean isCanceled();
     }
 
     public static class TrashedItem {
@@ -48,7 +46,11 @@ public class DataManager {
     public static boolean isDarkMode() { return sysPrefs.getBoolean("dark_mode", false); }
     public static void setDarkMode(boolean enabled) { sysPrefs.putBoolean("dark_mode", enabled); }
 
-    // --- LOGIC SAO LƯU (BACKUP) CÓ TIẾN ĐỘ ---
+    // [NEW] LƯU TRỮ ĐỘ NHẠY OMR (Mặc định 155)
+    public static int getOmrThreshold() { return sysPrefs.getInt("omr_threshold", 155); }
+    public static void setOmrThreshold(int threshold) { sysPrefs.putInt("omr_threshold", threshold); }
+
+    // --- LOGIC SAO LƯU (BACKUP) ---
     public static void backupData(File targetZip, ProgressListener listener) throws IOException {
         Path sourceDirPath = Paths.get("data");
         if (!Files.exists(sourceDirPath)) return;
@@ -75,7 +77,7 @@ public class DataManager {
         }
     }
 
-    // --- LOGIC PHỤC HỒI (RESTORE) CÓ TIẾN ĐỘ ---
+    // --- LOGIC PHỤC HỒI (RESTORE) ---
     public static void restoreData(File zipFile, ProgressListener listener) throws IOException {
         Path destDirPath = Paths.get("data");
         if (!Files.exists(destDirPath)) Files.createDirectories(destDirPath);

@@ -41,7 +41,7 @@ public class MainController {
     private List<String> currentRowStts = new ArrayList<>();
 
     private Map<String, String> studentExamCodes = new HashMap<>();
-    private SwingWorker<Void, Object[]> gradingWorker; // Biến quản lý tiến trình chấm bài
+    private SwingWorker<Void, Object[]> gradingWorker;
 
     public MainController(MainView view) {
         this.view = view;
@@ -101,6 +101,24 @@ public class MainController {
             JComboBox<String> comboBox = new JComboBox<>(currentConfig.getExamCodes().toArray(new String[0]));
             codeColumn.setCellEditor(new DefaultCellEditor(comboBox));
         }
+
+        // =========================================================
+        // [FIX 2]: THÊM TOOLTIP ĐỂ XEM ĐẦY ĐỦ LỖI KHI DI CHUỘT VÀO
+        // =========================================================
+        TableColumn statusColumn = view.getTblResults().getColumnModel().getColumn(5);
+        statusColumn.setCellRenderer(new javax.swing.table.DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                if (value != null) {
+                    // Xóa các thẻ HTML cũ (nếu có) để lấy text thuần
+                    String cleanText = value.toString().replaceAll("<[^>]*>", "");
+                    // Bọc lại bằng thẻ HTML có giới hạn chiều rộng 300px để tự động xuống dòng
+                    ((JComponent) c).setToolTipText("<html><p width='300'>" + cleanText + "</p></html>");
+                }
+                return c;
+            }
+        });
     }
 
     private void loadSessionToUI() {
@@ -160,10 +178,13 @@ public class MainController {
             model.OMRModels.ExamReport report = reportDatabase.get(stt);
 
             String fileName = "--- Chưa có ảnh ---";
-            if (assignedFiles.containsKey(stt)) {
-                fileName = "⏳ " + assignedFiles.get(stt).getName() + " (Chờ chấm)";
-            } else if (report != null && report.originalImagePath != null) {
-                fileName = "✅ " + new File(report.originalImagePath).getName();
+
+            // [FIX LOGIC]: Kiểm tra xem bài ĐÃ CHẤM XONG chưa trước!
+            if (report != null && report.originalImagePath != null) {
+                fileName = "<html><span style=\"font-family: 'Segoe UI Emoji'\">✅</span> " + new File(report.originalImagePath).getName() + "</html>";
+            }
+            else if (assignedFiles.containsKey(stt)) {
+                fileName = "<html><span style=\"font-family: 'Segoe UI Emoji'\">⏳</span> " + assignedFiles.get(stt).getName() + " (Chờ)</html>";
             }
 
             String code = "Mặc định";
@@ -205,7 +226,8 @@ public class MainController {
                     model.OMRModels.ExamReport report = reportDatabase.get(stt);
                     if (report != null && selectedCode != null && !selectedCode.equals(report.examCode)) {
                         report.examCode = selectedCode;
-                        report.statusMessage = "⚠️ Đã đổi mã, cần chấm lại";
+
+                        report.statusMessage = "<html><span style=\"font-family: 'Segoe UI Emoji'\">⚠️</span> Đã đổi mã, cần chấm lại</html>";
 
                         if (currentSession != null) {
                             service.DataManager.saveSession(currentSession, currentClassRoom.className);
@@ -316,7 +338,6 @@ public class MainController {
 
         view.getBtnStartGrading().addActionListener(e -> startGradingProcess());
 
-        // Sự kiện Dừng chấm
         view.getBtnStopGrading().addActionListener(e -> {
             if (gradingWorker != null && !gradingWorker.isDone()) {
                 gradingWorker.cancel(true);
@@ -326,7 +347,6 @@ public class MainController {
 
         view.getBtnExportScores().addActionListener(e -> saveExcel("BangDiem_" + currentSession.getExamName() + ".xlsx", 1));
 
-        // Sự kiện xuất đáp án chọn theo Mã đề
         view.getBtnExportConfig().addActionListener(e -> {
             if (currentConfig == null || currentConfig.getExamCodes().isEmpty()) {
                 JOptionPane.showMessageDialog(view, "Chưa có cấu hình đáp án để xuất!");
@@ -387,7 +407,7 @@ public class MainController {
                     model.OMRModels.ExamReport report = reportDatabase.get(stt);
                     if (report != null) {
                         report.examCode = selectedCode;
-                        report.statusMessage = "⚠️ Đã đổi mã, cần chấm lại";
+                        report.statusMessage = "<html><span style=\"font-family: 'Segoe UI Emoji'\">⚠️</span> Đã đổi mã, cần chấm lại</html>";
                         needsSave = true;
                     }
                 }
@@ -433,7 +453,7 @@ public class MainController {
                     model.OMRModels.ExamReport report = reportDatabase.get(stt);
                     if (report != null) {
                         report.examCode = selectedCode;
-                        report.statusMessage = "⚠️ Đã đổi mã, cần chấm lại";
+                        report.statusMessage = "<html><span style=\"font-family: 'Segoe UI Emoji'\">⚠️</span> Đã đổi mã, cần chấm lại</html>";
                         needsSave = true;
                     }
                 }
@@ -453,7 +473,12 @@ public class MainController {
         boolean hasPendingImage = assignedFiles.containsKey(stt);
 
         if (report != null || hasPendingImage) {
-            String[] options = {"🔍 Xem chi tiết", "📁 Gán lại ảnh khác", "❌ Xóa bài làm này", "Hủy bỏ"};
+            String[] options = {
+                    "🔍 Xem chi tiết",
+                    "<html><span style=\"font-family: 'Segoe UI Emoji'\">📁</span> Gán lại ảnh khác</html>",
+                    "<html><span style=\"font-family: 'Segoe UI Emoji'\">❌</span> Xóa bài làm này</html>",
+                    "Hủy bỏ"
+            };
             int choice = JOptionPane.showOptionDialog(view,
                     "Học sinh " + name + " đang có ảnh bài làm. Bạn muốn làm gì?",
                     "Tùy chọn thao tác", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
@@ -613,7 +638,6 @@ public class MainController {
 
     private void saveExcel(String defaultName, int type) {
         JFileChooser fileChooser = new JFileChooser();
-        // Ưu tiên đường dẫn trong Setting nếu người dùng đã cài
         String defaultPath = service.DataManager.getDefaultExportPath();
         fileChooser.setCurrentDirectory(new File(defaultPath));
         fileChooser.setSelectedFile(new File(defaultName));
@@ -770,7 +794,6 @@ public class MainController {
                 view.getBtnStartGrading().setEnabled(false);
                 view.getBtnSetAnswerKey().setEnabled(false);
 
-                // Mở khóa nút Dừng
                 view.getBtnStopGrading().setEnabled(true);
 
                 int totalFiles = assignedFiles.size();
@@ -807,19 +830,27 @@ public class MainController {
 
                             for (Map.Entry<String, String> entryResult : studentResults.entrySet()) {
                                 String val = entryResult.getValue();
-                                String qName = entryResult.getKey().replace("P1_", "").replace("P2_", "").replace("P3_", "");
+
+                                // =========================================================
+                                // [FIX 1]: GIỮ LẠI PHẦN 1, PHẦN 2 ĐỂ DỄ TÌM LỖI
+                                // =========================================================
+                                String qName = entryResult.getKey()
+                                        .replace("P1_", "Phần 1 - ")
+                                        .replace("P2_", "Phần 2 - ")
+                                        .replace("P3_", "Phần 3 - ")
+                                        .replace("_", " "); // Đổi dấu gạch dưới thành khoảng trắng cho đẹp
 
                                 if (val.startsWith("ERR_")) {
                                     hasError = true;
-                                    errorList.add(qName + " tô kép");
+                                    errorList.add(qName + " (Tô đúp/Tô sai)");
                                     studentResults.put(entryResult.getKey(), "?");
                                 } else if (val.startsWith("WARN_FMT_")) {
                                     hasWarning = true;
-                                    errorList.add(qName + " sai định dạng");
+                                    errorList.add(qName + " (Sai định dạng)");
                                     studentResults.put(entryResult.getKey(), val.substring(9));
                                 } else if (val.startsWith("WARN_")) {
                                     hasWarning = true;
-                                    errorList.add(qName + " mờ");
+                                    errorList.add(qName + " (Tô quá mờ)");
                                     studentResults.put(entryResult.getKey(), val.substring(5));
                                 }
                             }
@@ -835,9 +866,15 @@ public class MainController {
                             newReport.examCode = selectedCode;
 
                             String baseStatus = "";
-                            if (hasError) baseStatus = "❌ Lỗi: " + String.join(", ", errorList);
-                            else if (hasWarning) baseStatus = "⚠️ Nhắc: " + String.join(", ", errorList);
-                            else baseStatus = "✅ Thành công";
+                            if (hasError) {
+                                baseStatus = "<html><span style=\"font-family: 'Segoe UI Emoji'\">❌</span> Lỗi: " + String.join(", ", errorList) + "</html>";
+                            }
+                            else if (hasWarning) {
+                                baseStatus = "<html><span style=\"font-family: 'Segoe UI Emoji'\">⚠️</span> Nhắc: " + String.join(", ", errorList) + "</html>";
+                            }
+                            else {
+                                baseStatus = "<html><span style=\"font-family: 'Segoe UI Emoji'\">✅</span> Thành công</html>";
+                            }
 
                             newReport.statusMessage = baseStatus;
 
@@ -920,7 +957,7 @@ public class MainController {
                     JOptionPane.showMessageDialog(view, "Đã chấm xong! Dữ liệu đã được lưu riêng cho lớp " + currentClassRoom.className);
                 }
                 if (!isCancelled() && service.DataManager.isSoundEnabled()) {
-                    Toolkit.getDefaultToolkit().beep(); // Tiếng bíp hệ thống
+                    Toolkit.getDefaultToolkit().beep();
                 }
             }
         };

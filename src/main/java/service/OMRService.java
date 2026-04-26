@@ -44,7 +44,10 @@ public class OMRService {
         Mat gray = new Mat();
         Imgproc.cvtColor(warped, gray, Imgproc.COLOR_BGR2GRAY);
         Mat thresh = new Mat();
-        Imgproc.threshold(gray, thresh, 155, 255, Imgproc.THRESH_BINARY_INV);
+
+        // [FIX]: Lấy chỉ số Threshold tự động từ Setting của người dùng
+        int thresholdValue = DataManager.getOmrThreshold();
+        Imgproc.threshold(gray, thresh, thresholdValue, 255, Imgproc.THRESH_BINARY_INV);
 
         Map<String, String> results = new LinkedHashMap<>();
 

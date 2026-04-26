@@ -3,6 +3,7 @@ package view;
 import service.DataManager;
 import javax.swing.*;
 import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.util.List;
 
@@ -10,10 +11,11 @@ public class SettingsDialog extends JDialog {
     private JCheckBox chkAutoSave, chkSound;
     private JToggleButton btnToggleTheme;
     private JTextField txtExportPath;
+    private JSlider sldOmrThreshold;
 
     public SettingsDialog(JFrame parent) {
         super(parent, "Cài đặt hệ thống - Team N7", true);
-        setSize(550, 450);
+        setSize(550, 600);
         setLayout(new BorderLayout(10, 10));
         setLocationRelativeTo(parent);
 
@@ -28,6 +30,11 @@ public class SettingsDialog extends JDialog {
             DataManager.setDarkMode(btnToggleTheme.isSelected());
             DataManager.setSoundEnabled(chkSound.isSelected());
             DataManager.setDefaultExportPath(txtExportPath.getText());
+
+            if (sldOmrThreshold != null) {
+                DataManager.setOmrThreshold(sldOmrThreshold.getValue());
+            }
+
             JOptionPane.showMessageDialog(this, "Đã lưu cài đặt thành công!");
             dispose();
         });
@@ -36,25 +43,26 @@ public class SettingsDialog extends JDialog {
         pnlBottom.add(btnSave);
         add(pnlBottom, BorderLayout.SOUTH);
 
-        service.WindowPersistenceManager.restoreWindow(this, "SettingsDialog", 550, 450);
+        service.WindowPersistenceManager.restoreWindow(this, "SettingsDialog", 550, 600);
         service.WindowPersistenceManager.attachSaver(this, "SettingsDialog");
     }
 
     private JPanel createSystemTab() {
-        JPanel p = new JPanel();
-        p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
-        p.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        JPanel contentPanel = new JPanel();
+        contentPanel.setLayout(new BoxLayout(contentPanel, BoxLayout.Y_AXIS));
+        contentPanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
 
         chkAutoSave = new JCheckBox("Ghi nhớ vị trí cửa sổ");
         chkAutoSave.setSelected(DataManager.isAutoSavePosition());
-        p.add(chkAutoSave);
+        contentPanel.add(chkAutoSave);
 
         btnToggleTheme = new JToggleButton(DataManager.isDarkMode() ? "🌙 Chế độ Tối" : "☀️ Chế độ Sáng");
         btnToggleTheme.setSelected(DataManager.isDarkMode());
-        p.add(new JLabel("Giao diện:")); p.add(btnToggleTheme);
+        contentPanel.add(new JLabel("Giao diện:"));
+        contentPanel.add(btnToggleTheme);
 
-        p.add(Box.createRigidArea(new Dimension(0, 20)));
-        p.add(new JLabel("Bảo trì dữ liệu:"));
+        contentPanel.add(Box.createRigidArea(new Dimension(0, 20)));
+        contentPanel.add(new JLabel("Bảo trì dữ liệu:"));
 
         JPanel pnlBtns = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 5));
         JButton btnBackup = new JButton("📦 Sao lưu dữ liệu (Backup)");
@@ -81,21 +89,98 @@ public class SettingsDialog extends JDialog {
         });
 
         pnlBtns.add(btnBackup); pnlBtns.add(Box.createHorizontalStrut(10)); pnlBtns.add(btnRestore);
-        p.add(pnlBtns);
+        contentPanel.add(pnlBtns);
+
+        // Bọc vào BorderLayout.NORTH để panel không bị giãn khi đưa vào ScrollPane
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.add(contentPanel, BorderLayout.NORTH);
+
+        // THÊM THANH CUỘN (Scrollbar)
+        JScrollPane scrollPane = new JScrollPane(wrapper);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16); // Lăn chuột mượt hơn
+        scrollPane.setBorder(null);
+
+        JPanel p = new JPanel(new BorderLayout());
+        p.add(scrollPane, BorderLayout.CENTER);
         return p;
     }
 
     private JPanel createGradingTab() {
-        JPanel p = new JPanel();
-        p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
-        p.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        JPanel contentPanel = new JPanel();
+        contentPanel.setLayout(new BoxLayout(contentPanel, BoxLayout.Y_AXIS));
+        contentPanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
 
         chkSound = new JCheckBox("Phát âm thanh thông báo khi chấm xong");
         chkSound.setSelected(DataManager.isSoundEnabled());
-        p.add(chkSound);
+        contentPanel.add(chkSound);
 
-        p.add(Box.createRigidArea(new Dimension(0, 15)));
-        p.add(new JLabel("Thư mục xuất file mặc định:"));
+        contentPanel.add(Box.createRigidArea(new Dimension(0, 15)));
+
+        // --- BẮT ĐẦU: KHU VỰC ĐỘ NHẠY OMR ---
+        contentPanel.add(new JLabel("Độ nhạy quét nhận diện vết tô OMR (0 - 255):"));
+
+        // Tạo ô nhập số cụ thể
+        JPanel pnlInput = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 5));
+        pnlInput.add(new JLabel("Mức độ hiện tại: "));
+
+        JSpinner spnOmrValue = new JSpinner(new SpinnerNumberModel(DataManager.getOmrThreshold(), 0, 255, 1));
+        pnlInput.add(spnOmrValue);
+
+        JLabel lblWarning = new JLabel("");
+        lblWarning.setFont(new Font("Arial", Font.ITALIC, 12));
+        lblWarning.setForeground(Color.GRAY);
+        pnlInput.add(Box.createHorizontalStrut(10));
+        pnlInput.add(lblWarning);
+
+        contentPanel.add(pnlInput);
+
+        // Mở rộng thanh kéo từ 0 - 255 để đồng bộ hoàn toàn với ô nhập số
+        sldOmrThreshold = new JSlider(JSlider.HORIZONTAL, 0, 255, DataManager.getOmrThreshold());
+        sldOmrThreshold.setMajorTickSpacing(50);
+        sldOmrThreshold.setMinorTickSpacing(10);
+        sldOmrThreshold.setPaintTicks(true);
+        sldOmrThreshold.setPaintLabels(true);
+
+        JLabel lblPreview = new JLabel();
+        lblPreview.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lblPreview.setIcon(generateOmrPreview(sldOmrThreshold.getValue()));
+
+        // Hàm cập nhật chữ cảnh báo và vẽ lại ảnh
+        Runnable updateUI = () -> {
+            int val = sldOmrThreshold.getValue();
+            String warningText = "";
+            if (val <= 100) {
+                warningText = "(Khắt khe - Dễ bỏ qua nét tô nhạt!)";
+            } else if (val >= 180) {
+                warningText = "(Rất nhạy - Dễ nhận nhầm vết tẩy!)";
+            }
+            lblWarning.setText(warningText);
+            lblPreview.setIcon(generateOmrPreview(val));
+        };
+
+        // Gắn sự kiện: Kéo thanh trượt -> Cập nhật ô số & Ảnh
+        sldOmrThreshold.addChangeListener(e -> {
+            spnOmrValue.setValue(sldOmrThreshold.getValue());
+            updateUI.run();
+        });
+
+        // Gắn sự kiện: Nhập số -> Cập nhật thanh trượt & Ảnh
+        spnOmrValue.addChangeListener(e -> {
+            int val = (int) spnOmrValue.getValue();
+            sldOmrThreshold.setValue(val);
+            updateUI.run();
+        });
+
+        // Chạy lần đầu để set chữ cảnh báo lúc mới mở form
+        updateUI.run();
+
+        contentPanel.add(sldOmrThreshold);
+        contentPanel.add(Box.createRigidArea(new Dimension(0, 15)));
+        contentPanel.add(lblPreview);
+        contentPanel.add(Box.createRigidArea(new Dimension(0, 20)));
+        // --- KẾT THÚC: KHU VỰC ĐỘ NHẠY OMR ---
+
+        contentPanel.add(new JLabel("Thư mục xuất file mặc định:"));
         JPanel pnlPath = new JPanel(new BorderLayout(5, 0));
         txtExportPath = new JTextField(DataManager.getDefaultExportPath());
         JButton btnBrowse = new JButton("...");
@@ -105,8 +190,75 @@ public class SettingsDialog extends JDialog {
             if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) txtExportPath.setText(fc.getSelectedFile().getAbsolutePath());
         });
         pnlPath.add(txtExportPath, BorderLayout.CENTER); pnlPath.add(btnBrowse, BorderLayout.EAST);
-        p.add(pnlPath);
+        contentPanel.add(pnlPath);
+
+        // Bọc vào BorderLayout.NORTH để form không bị co giãn vỡ layout
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.add(contentPanel, BorderLayout.NORTH);
+
+        // THÊM THANH CUỘN (Scrollbar)
+        JScrollPane scrollPane = new JScrollPane(wrapper);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16); // Lăn chuột mượt hơn
+        scrollPane.setBorder(null);
+
+        JPanel p = new JPanel(new BorderLayout());
+        p.add(scrollPane, BorderLayout.CENTER);
         return p;
+    }
+
+    private ImageIcon generateOmrPreview(int threshold) {
+        int width = 500;
+        int height = 150;
+        BufferedImage img = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = img.createGraphics();
+
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        g.setColor(Color.WHITE);
+        g.fillRect(0, 0, width, height);
+        g.setColor(Color.LIGHT_GRAY);
+        g.drawRect(0, 0, width - 1, height - 1);
+
+        int[] grays = {50, 130, 190};
+        String[] labels = {"Tô đậm (Tốt)", "Tô vừa phải", "Tô quá mờ/Nhạt"};
+
+        g.setColor(Color.BLACK);
+        g.setFont(new Font("Arial", Font.BOLD, 12));
+        g.drawString("Mô phỏng bài làm:", 15, 40);
+        g.drawString("Phần mềm nhận diện:", 15, 110);
+
+        for (int i = 0; i < 3; i++) {
+            int cx = 200 + i * 120;
+
+            g.setColor(new Color(grays[i], grays[i], grays[i]));
+            g.fillOval(cx - 15, 20, 30, 30);
+            g.setColor(Color.GRAY);
+            g.drawOval(cx - 15, 20, 30, 30);
+
+            g.setColor(Color.BLACK);
+            g.setFont(new Font("Arial", Font.PLAIN, 12));
+            g.drawString(labels[i], cx - 25, 70);
+
+            boolean isDetected = grays[i] <= threshold;
+
+            if (isDetected) {
+                g.setColor(Color.BLACK);
+                g.fillOval(cx - 15, 90, 30, 30);
+                g.setColor(new Color(0, 150, 0));
+                g.setFont(new Font("Arial", Font.BOLD, 12));
+                g.drawString("✔ Được tính", cx - 20, 138);
+            } else {
+                g.setColor(Color.WHITE);
+                g.fillOval(cx - 15, 90, 30, 30);
+                g.setColor(Color.LIGHT_GRAY);
+                g.drawOval(cx - 15, 90, 30, 30);
+                g.setColor(Color.RED);
+                g.setFont(new Font("Arial", Font.BOLD, 12));
+                g.drawString("❌ Bỏ qua", cx - 20, 138);
+            }
+        }
+        g.dispose();
+        return new ImageIcon(img);
     }
 
     private void runTaskWithProgress(String title, TaskProcessor task) {
