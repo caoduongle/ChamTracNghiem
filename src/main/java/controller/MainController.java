@@ -6,6 +6,7 @@ import java.awt.event.MouseEvent;
 import javax.swing.table.DefaultTableModel;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.prefs.Preferences; // THƯ VIỆN LƯU TRỮ VỊ TRÍ
 
 // THƯ VIỆN KÉO THẢ
 import java.awt.dnd.DropTarget;
@@ -144,7 +145,6 @@ public class MainController {
         view.getBtnDeleteResult().addActionListener(e -> deleteSelectedReport());
         view.getCbxSortResults().addActionListener(e -> refreshTable());
 
-        // --- GẮN SỰ KIỆN NÚT DASHBOARD (ĐỀ THI HIỆN TẠI) ---
         view.getBtnDashboard().addActionListener(e -> {
             if (currentSession == null || currentSession.getReports().isEmpty()) {
                 JOptionPane.showMessageDialog(view, "Chưa có bài thi nào được chấm để thống kê!");
@@ -165,7 +165,6 @@ public class MainController {
                         int row = view.getTblResults().rowAtPoint(p);
                         if (row != -1) {
                             String low = droppedFiles.get(0).getName().toLowerCase();
-                            // Hỗ trợ cả JPG, JPEG và PNG
                             if (low.endsWith(".jpg") || low.endsWith(".png") || low.endsWith(".jpeg")) {
                                 String stt = currentRowStts.get(row);
                                 assignedFiles.put(stt, droppedFiles.get(0));
@@ -190,7 +189,7 @@ public class MainController {
                     if (autoCount > 0) {
                         view.setStatusMessage("Đã gán tự động " + autoCount + " bài thi dựa theo STT.");
                     } else if (droppedFiles.size() > 1) {
-                        JOptionPane.showMessageDialog(view, "Không có file nào khớp với STT của lớp này (VD: file 1.png sẽ tự gán cho STT 1).");
+                        JOptionPane.showMessageDialog(view, "Không có file nào khớp với STT của lớp này.");
                     }
                 } catch (Exception ex) { ex.printStackTrace(); }
             }
@@ -262,8 +261,6 @@ public class MainController {
             if (report != null && report.imagePath != null) {
                 try {
                     java.nio.file.Files.deleteIfExists(new File(report.imagePath).toPath());
-
-                    // Tự động tìm đúng đuôi file để xóa cả file _processed
                     int dotIndex = report.imagePath.lastIndexOf('.');
                     if (dotIndex > 0) {
                         String ext = report.imagePath.substring(dotIndex);
@@ -309,8 +306,6 @@ public class MainController {
                 if (report != null && report.imagePath != null) {
                     try {
                         java.nio.file.Files.deleteIfExists(new File(report.imagePath).toPath());
-
-                        // Tự động tìm đúng đuôi file để xóa cả file _processed
                         int dotIndex = report.imagePath.lastIndexOf('.');
                         if (dotIndex > 0) {
                             String ext = report.imagePath.substring(dotIndex);
@@ -351,8 +346,14 @@ public class MainController {
             @Override
             public void mouseClicked(MouseEvent e) {
                 JFileChooser chooser = new JFileChooser();
+                // --- BỘ NHỚ LƯU THƯ MỤC ẢNH BÀI LÀM ---
+                Preferences prefs = Preferences.userRoot().node("ChamTracNghiem_N7");
+                String lastDir = prefs.get("DIR_IMAGES", System.getProperty("user.home"));
+                chooser.setCurrentDirectory(new File(lastDir));
+
                 chooser.setDialogTitle("Chọn ảnh bài làm cho học sinh: " + name);
                 if (chooser.showOpenDialog(dropDialog) == JFileChooser.APPROVE_OPTION) {
+                    prefs.put("DIR_IMAGES", chooser.getSelectedFile().getParent()); // Ghi nhớ lại vị trí mới
                     assignedFiles.put(stt, chooser.getSelectedFile());
                     refreshTable();
                     dropDialog.dispose();
@@ -394,8 +395,16 @@ public class MainController {
 
     private void saveExcel(String defaultName, int type) {
         JFileChooser fileChooser = new JFileChooser();
+
+        // --- BỘ NHỚ LƯU THƯ MỤC XUẤT FILE ---
+        Preferences prefs = Preferences.userRoot().node("ChamTracNghiem_N7");
+        String lastDir = prefs.get("DIR_EXPORT", System.getProperty("user.home"));
+        fileChooser.setCurrentDirectory(new File(lastDir));
         fileChooser.setSelectedFile(new File(defaultName));
+
         if (fileChooser.showSaveDialog(view) == JFileChooser.APPROVE_OPTION) {
+            prefs.put("DIR_EXPORT", fileChooser.getSelectedFile().getParent()); // Ghi nhớ lại vị trí xuất file mới
+
             try {
                 String path = fileChooser.getSelectedFile().getAbsolutePath();
                 if (!path.endsWith(".xlsx")) path += ".xlsx";
@@ -431,7 +440,6 @@ public class MainController {
         String[] cols = {"Câu hỏi", "Đ/A Học sinh", "Đ/A Chuẩn"};
         DefaultTableModel detailModel = new DefaultTableModel(cols, 0);
 
-        // LỌC VÀ SẮP XẾP ĐÁP ÁN SAI LOGIC
         java.util.List<model.OMRModels.AnswerRecord> wrongAnswers = new java.util.ArrayList<>();
         for (model.OMRModels.AnswerRecord rec : report.details) {
             if (!rec.isCorrect) wrongAnswers.add(rec);
@@ -536,12 +544,18 @@ public class MainController {
                 view.getBtnStartGrading().setEnabled(false);
                 view.getBtnSetAnswerKey().setEnabled(false);
 
+                int totalFiles = assignedFiles.size();
+                int currentCount = 0;
+                publish(new Object[]{"INIT_PROGRESS"});
+
                 for (Map.Entry<String, File> entry : assignedFiles.entrySet()) {
+                    currentCount++;
                     String stt = entry.getKey();
                     File file = entry.getValue();
 
                     try {
-                        publish(new Object[]{"STATUS", "Đang chấm bài cho STT " + stt + "..."});
+                        int percent = (currentCount * 100) / totalFiles;
+                        publish(new Object[]{"STATUS", "Đang chấm: " + currentCount + "/" + totalFiles + " bài (STT " + stt + ")...", percent});
 
                         Map<String, String> studentResults = OMRService.processExam(file.getAbsolutePath(), currentConfig);
 
@@ -551,34 +565,28 @@ public class MainController {
                                 if (String.valueOf(st.stt).equals(stt)) { fName = st.name; break; }
                             }
 
-                            // =========================================================
-                            // BỘ LỌC XỬ LÝ LỖI (Bắt tín hiệu từ OMR để cảnh báo ra UI)
-                            // =========================================================
                             boolean hasError = false;
                             boolean hasWarning = false;
                             List<String> errorList = new ArrayList<>();
 
                             for (Map.Entry<String, String> entryResult : studentResults.entrySet()) {
                                 String val = entryResult.getValue();
-
-                                // Cắt chữ P1, P2, P3 đi cho thông báo ngắn gọn (VD: Câu_1 tô kép)
                                 String qName = entryResult.getKey().replace("P1_", "").replace("P2_", "").replace("P3_", "");
 
                                 if (val.startsWith("ERR_")) {
                                     hasError = true;
                                     errorList.add(qName + " tô kép");
-                                    studentResults.put(entryResult.getKey(), "?"); // Trả về ? để bên trong báo sai gọn gàng
+                                    studentResults.put(entryResult.getKey(), "?");
                                 } else if (val.startsWith("WARN_FMT_")) {
                                     hasWarning = true;
                                     errorList.add(qName + " sai định dạng");
-                                    studentResults.put(entryResult.getKey(), val.substring(9)); // Cắt chữ cảnh báo để lấy đáp án thật
+                                    studentResults.put(entryResult.getKey(), val.substring(9));
                                 } else if (val.startsWith("WARN_")) {
                                     hasWarning = true;
                                     errorList.add(qName + " mờ");
                                     studentResults.put(entryResult.getKey(), val.substring(5));
                                 }
                             }
-                            // =========================================================
 
                             model.OMRModels.ExamReport newReport = service.ScoringEngine.gradeExam(
                                     stt, "AUTO", studentResults, currentConfig
@@ -589,7 +597,6 @@ public class MainController {
                             newReport.studentSttFile = stt;
                             newReport.studentClass = currentClassRoom.className;
 
-                            // GẮN TRẠNG THÁI RA BẢNG BÊN NGOÀI
                             if (hasError) {
                                 newReport.statusMessage = "❌ Lỗi: " + String.join(", ", errorList);
                             } else if (hasWarning) {
@@ -602,7 +609,6 @@ public class MainController {
                                 File imageDir = new File("data/classes/" + currentClassRoom.className + "/images/" + currentSession.getExamName());
                                 if (!imageDir.exists()) imageDir.mkdirs();
 
-                                // Lấy đuôi file động (.png, .jpeg, .jpg)
                                 String originalExt = ".jpg";
                                 int extIndex = file.getName().lastIndexOf('.');
                                 if (extIndex > 0) {
@@ -641,8 +647,19 @@ public class MainController {
             @Override
             protected void process(List<Object[]> chunks) {
                 for (Object[] chunk : chunks) {
-                    if (chunk[0].equals("STATUS")) view.setStatusMessage((String) chunk[1]);
-                    else if (chunk[0].equals("UPDATE")) refreshTable();
+                    if (chunk[0].equals("STATUS")) {
+                        view.setStatusMessage((String) chunk[1]);
+                        if (chunk.length > 2) {
+                            view.getProgressBar().setValue((int) chunk[2]);
+                        }
+                    }
+                    else if (chunk[0].equals("INIT_PROGRESS")) {
+                        view.getProgressBar().setVisible(true);
+                        view.getProgressBar().setValue(0);
+                    }
+                    else if (chunk[0].equals("UPDATE")) {
+                        refreshTable();
+                    }
                 }
             }
 
@@ -652,6 +669,8 @@ public class MainController {
                 view.getBtnBackToMenu().setEnabled(true);
                 view.getBtnStartGrading().setEnabled(true);
                 view.getBtnSetAnswerKey().setEnabled(true);
+
+                view.getProgressBar().setVisible(false);
 
                 assignedFiles.clear();
                 refreshTable();

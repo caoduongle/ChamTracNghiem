@@ -16,7 +16,10 @@ public class MainView extends JFrame {
     private JButton btnDeleteResult;
     private JComboBox<String> cbxSortResults;
     private JButton btnExportScores, btnExportConfig;
-    private JButton btnDashboard; // NÚT MỚI THÊM
+    private JButton btnDashboard;
+
+    // --- TÍNH NĂNG MỚI: THANH TIẾN ĐỘ ---
+    private JProgressBar progressBar;
 
     public MainView() {
         setTitle("Phần mềm Chấm Trắc Nghiệm - Team N7");
@@ -31,7 +34,6 @@ public class MainView extends JFrame {
     private void initUI() {
         JPanel panelControl = new JPanel(new FlowLayout(FlowLayout.LEFT));
 
-        // Khởi tạo các nút điều khiển
         btnBackToMenu = new JButton("⬅ Trở về Menu");
         btnSetAnswerKey = new JButton("1. Cài đặt đáp án");
         btnStartGrading = new JButton("2. Bắt đầu chấm");
@@ -39,18 +41,17 @@ public class MainView extends JFrame {
         btnDeleteResult = new JButton("❌ Xóa bài chọn");
         cbxSortResults = new JComboBox<>(new String[]{"Sắp xếp: Mặc định", "Sắp xếp: SBD", "Sắp xếp: Điểm (Cao-Thấp)"});
 
-        btnDashboard = new JButton("📈 Thống kê lớp"); // KHỞI TẠO NÚT
+        btnDashboard = new JButton("📈 Thống kê lớp");
         btnExportScores = new JButton("📊 Xuất Bảng Điểm");
         btnExportConfig = new JButton("📝 Xuất Đáp Án");
 
-        // Đưa các nút vào Panel theo thứ tự logic gọn gàng
         panelControl.add(btnBackToMenu);
         panelControl.add(btnSetAnswerKey);
         panelControl.add(btnStartGrading);
-        panelControl.add(new JLabel("  |  ")); // Vạch ngăn cách
+        panelControl.add(new JLabel("  |  "));
         panelControl.add(btnDeleteResult);
         panelControl.add(cbxSortResults);
-        panelControl.add(btnDashboard); // THÊM NÚT VÀO GIAO DIỆN
+        panelControl.add(btnDashboard);
         panelControl.add(btnExportScores);
         panelControl.add(btnExportConfig);
 
@@ -75,13 +76,22 @@ public class MainView extends JFrame {
 
         add(splitPane, BorderLayout.CENTER);
 
+        // --- KHU VỰC CHỨA TRẠNG THÁI VÀ THANH TIẾN ĐỘ ---
         JPanel panelStatus = new JPanel(new FlowLayout(FlowLayout.LEFT));
         lblStatus = new JLabel("Trạng thái: Sẵn sàng");
+
+        progressBar = new JProgressBar(0, 100);
+        progressBar.setStringPainted(true); // Hiện chữ % bên trong thanh
+        progressBar.setPreferredSize(new Dimension(300, 20));
+        progressBar.setVisible(false); // Ẩn đi khi chưa bắt đầu chấm
+
         panelStatus.add(lblStatus);
+        panelStatus.add(Box.createHorizontalStrut(20)); // Tạo khoảng cách
+        panelStatus.add(progressBar); // Gắn vào giao diện
+
         add(panelStatus, BorderLayout.SOUTH);
     }
 
-    // Các hàm Getter cho Controller gọi
     public JButton getBtnBackToMenu() { return btnBackToMenu; }
     public JButton getBtnSetAnswerKey() { return btnSetAnswerKey; }
     public JButton getBtnStartGrading() { return btnStartGrading; }
@@ -90,7 +100,8 @@ public class MainView extends JFrame {
     public JComboBox<String> getCbxSortResults() { return cbxSortResults; }
     public JButton getBtnExportScores() { return btnExportScores; }
     public JButton getBtnExportConfig() { return btnExportConfig; }
-    public JButton getBtnDashboard() { return btnDashboard; } // GETTER NÚT MỚI
+    public JButton getBtnDashboard() { return btnDashboard; }
+    public JProgressBar getProgressBar() { return progressBar; } // Getter cho thanh tiến độ
 
     public void setImagePreview(Icon imageIcon) {
         lblImagePreview.setText("");
@@ -110,6 +121,8 @@ public class MainView extends JFrame {
         lblImagePreview.setIcon(null);
         lblImagePreview.setText("Hình ảnh bài thi sẽ hiển thị ở đây");
         lblStatus.setText("Trạng thái: Vui lòng chọn đề thi để tiếp tục");
+        progressBar.setVisible(false); // Ẩn đi khi reset
+        progressBar.setValue(0);
         setTitle("Phần mềm Chấm Trắc Nghiệm - Team N7");
     }
 }

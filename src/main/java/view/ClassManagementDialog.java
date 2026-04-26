@@ -7,6 +7,7 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.io.File;
 import java.util.List;
+import java.util.prefs.Preferences; // THÊM THƯ VIỆN NHỚ VỊ TRÍ
 
 // THƯ VIỆN KÉO THẢ
 import java.awt.dnd.DropTarget;
@@ -21,7 +22,7 @@ public class ClassManagementDialog extends JDialog {
 
     public ClassManagementDialog(JFrame parent) {
         super(parent, "Quản lý Lớp học - Team N7", true);
-        setSize(550, 500); // Tăng chút chiều cao để chứa nút mới
+        setSize(550, 500);
         setLayout(new BorderLayout(5, 5));
 
         String[] cols = {"Tên Lớp", "Sĩ số (Học sinh)"};
@@ -37,7 +38,6 @@ public class ClassManagementDialog extends JDialog {
         pnlList.add(new JScrollPane(tblClasses), BorderLayout.CENTER);
         add(pnlList, BorderLayout.CENTER);
 
-        // ĐÃ NÂNG CẤP LÊN GRID 4 HÀNG ĐỂ CHỨA NÚT THỐNG KÊ
         JPanel pnlBtns = new JPanel(new GridLayout(4, 2, 5, 5));
         pnlBtns.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
@@ -47,10 +47,8 @@ public class ClassManagementDialog extends JDialog {
         JButton btnEdit = new JButton("✏ Sửa sĩ số / Danh sách");
         JButton btnDel = new JButton("❌ Xóa lớp");
         JButton btnTrash = new JButton("🗑 Thùng rác lớp học");
-
-        // --- NÚT MỚI: DASHBOARD 1 ---
         JButton btnClassDashboard = new JButton("📈 Thống kê Tổng quan Lớp");
-        JLabel emptyLabel = new JLabel(""); // Lấp chỗ trống cho đủ lưới 4x2
+        JLabel emptyLabel = new JLabel("");
 
         pnlBtns.add(btnNew); pnlBtns.add(btnOpen);
         pnlBtns.add(btnRename); pnlBtns.add(btnEdit);
@@ -61,7 +59,6 @@ public class ClassManagementDialog extends JDialog {
 
         loadClasses();
 
-        // 1. TẠO LỚP MỚI
         btnNew.addActionListener(e -> {
             String name = JOptionPane.showInputDialog(this, "Nhập tên lớp mới (VD: 10A1):");
             if (name == null || name.trim().isEmpty()) return;
@@ -73,7 +70,6 @@ public class ClassManagementDialog extends JDialog {
             }
         });
 
-        // 2. CHỌN LỚP ĐỂ CHẤM
         btnOpen.addActionListener(e -> {
             int r = tblClasses.getSelectedRow();
             if (r != -1) {
@@ -82,7 +78,6 @@ public class ClassManagementDialog extends JDialog {
             } else JOptionPane.showMessageDialog(this, "Vui lòng chọn một lớp trong bảng!");
         });
 
-        // 3. ĐỔI TÊN LỚP
         btnRename.addActionListener(e -> {
             int r = tblClasses.getSelectedRow();
             if (r != -1) {
@@ -95,7 +90,6 @@ public class ClassManagementDialog extends JDialog {
             }
         });
 
-        // 4. SỬA SĨ SỐ VÀ DANH SÁCH
         btnEdit.addActionListener(e -> {
             int r = tblClasses.getSelectedRow();
             if (r != -1) {
@@ -112,7 +106,6 @@ public class ClassManagementDialog extends JDialog {
             }
         });
 
-        // 5. XÓA LỚP
         btnDel.addActionListener(e -> {
             int r = tblClasses.getSelectedRow();
             if (r != -1) {
@@ -124,13 +117,11 @@ public class ClassManagementDialog extends JDialog {
             }
         });
 
-        // 6. THÙNG RÁC
         btnTrash.addActionListener(e -> {
             new ClassTrashDialog(this).setVisible(true);
             loadClasses();
         });
 
-        // 7. GỌI DASHBOARD 1 (THỐNG KÊ TỔNG QUAN)
         btnClassDashboard.addActionListener(e -> {
             int r = tblClasses.getSelectedRow();
             if (r != -1) {
@@ -210,12 +201,18 @@ class ClassEditorDialog extends JDialog {
         tbl.setRowHeight(25);
         add(new JScrollPane(tbl), BorderLayout.CENTER);
 
-        // KÍCH HOẠT KÉO THẢ
         enableDragAndDrop();
 
         btnImportExcel.addActionListener(e -> {
             JFileChooser chooser = new JFileChooser();
+
+            // --- BỘ NHỚ LƯU THƯ MỤC EXCEL DANH SÁCH LỚP ---
+            Preferences prefs = Preferences.userRoot().node("ChamTracNghiem_N7");
+            String lastDir = prefs.get("DIR_CLASS_EXCEL", System.getProperty("user.home"));
+            chooser.setCurrentDirectory(new File(lastDir));
+
             if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+                prefs.put("DIR_CLASS_EXCEL", chooser.getSelectedFile().getParent()); // Cập nhật lại vị trí mới
                 processExcelFile(chooser.getSelectedFile());
             }
         });
@@ -249,8 +246,16 @@ class ClassEditorDialog extends JDialog {
 
         btnExport.addActionListener(ev -> {
             JFileChooser fc = new JFileChooser();
+
+            // Dùng chung Key lưu trữ xuất file để tạo sự đồng bộ
+            Preferences prefs = Preferences.userRoot().node("ChamTracNghiem_N7");
+            String lastDir = prefs.get("DIR_EXPORT", System.getProperty("user.home"));
+            fc.setCurrentDirectory(new File(lastDir));
             fc.setSelectedFile(new File("DiemTong_" + cr.className + ".xlsx"));
+
             if (fc.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+                prefs.put("DIR_EXPORT", fc.getSelectedFile().getParent()); // Nhớ vị trí xuất file
+
                 try {
                     service.ExcelService.exportClassScoreTable(cr, fc.getSelectedFile().getAbsolutePath());
                     JOptionPane.showMessageDialog(this, "Thành công!");

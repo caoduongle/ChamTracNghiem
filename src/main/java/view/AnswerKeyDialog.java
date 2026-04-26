@@ -2,7 +2,7 @@ package view;
 
 import model.ExamConfig;
 import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook; // THÊM IMPORT NÀY
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
@@ -15,6 +15,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.prefs.Preferences; // THÊM THƯ VIỆN NHỚ VỊ TRÍ
 
 // THÊM THƯ VIỆN KÉO THẢ
 import java.awt.dnd.DropTarget;
@@ -264,17 +265,13 @@ public class AnswerKeyDialog extends JDialog {
         calculateTotalPossibleScore();
     }
 
-    // ==========================================================
-    // ĐÃ FIX: DÙNG TRỰC TIẾP XSSFWorkbook VÀ toString() ĐỂ CHỐNG CRASH
-    // ==========================================================
     private void processExcelFile(File file) {
         try (FileInputStream fis = new FileInputStream(file);
-             XSSFWorkbook workbook = new XSSFWorkbook(fis)) { // Dùng XSSFWorkbook để tránh lỗi ClassLoader
+             XSSFWorkbook workbook = new XSSFWorkbook(fis)) {
 
             Sheet sheet = workbook.getSheetAt(0);
             tableModel.setRowCount(0);
 
-            // Duyệt từ dòng 1 (bỏ qua dòng tiêu đề)
             for (int i = 1; i <= sheet.getLastRowNum(); i++) {
                 Row row = sheet.getRow(i);
                 if (row == null) continue;
@@ -284,7 +281,6 @@ public class AnswerKeyDialog extends JDialog {
                 Cell aCell = row.getCell(2);
 
                 if (qCell != null && phanCell != null && aCell != null) {
-                    // Dùng toString() để tránh crash nếu định dạng ô trong Excel là Số thay vì Text
                     String qStr = qCell.toString().replace(".0", "").trim();
                     String phan = phanCell.toString().trim().toUpperCase();
                     String ans = aCell.toString().trim().toUpperCase();
@@ -305,9 +301,24 @@ public class AnswerKeyDialog extends JDialog {
         }
     }
 
+    // ==========================================================
+    // ĐÃ FIX: LƯU VÀ GỌI LẠI ĐƯỜNG DẪN THƯ MỤC KHI NHẬP EXCEL ĐÁP ÁN
+    // ==========================================================
     private void importFromExcel() {
         JFileChooser fileChooser = new JFileChooser();
+
+        // 1. Khởi tạo bộ nhớ (Preferences)
+        Preferences prefs = Preferences.userRoot().node("ChamTracNghiem_N7");
+
+        // 2. Lấy vị trí đã lưu riêng cho mục Đáp Án (Mặc định mở thư mục Home)
+        String lastDir = prefs.get("DIR_ANSWER_KEY", System.getProperty("user.home"));
+        fileChooser.setCurrentDirectory(new File(lastDir));
+
         if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            // 3. Ghi nhớ lại vị trí thư mục vừa chọn vào Registry
+            prefs.put("DIR_ANSWER_KEY", fileChooser.getSelectedFile().getParent());
+
+            // Xử lý file
             processExcelFile(fileChooser.getSelectedFile());
         }
     }
