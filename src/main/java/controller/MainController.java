@@ -94,10 +94,8 @@ public class MainController {
 
     private void setupTableColumns() {
         DefaultTableModel model = (DefaultTableModel) view.getTblResults().getModel();
-        // Bổ sung thêm cột Mã Đề vào vị trí thứ 3 (Index 3)
         model.setColumnIdentifiers(new Object[]{"STT", "Họ Tên Học Sinh", "File Ảnh", "Mã Đề", "Tổng điểm", "Trạng thái"});
 
-        // Nhúng ComboBox vào cột Mã Đề
         if (currentConfig != null && currentConfig.getExamCodes() != null) {
             TableColumn codeColumn = view.getTblResults().getColumnModel().getColumn(3);
             JComboBox<String> comboBox = new JComboBox<>(currentConfig.getExamCodes().toArray(new String[0]));
@@ -134,9 +132,13 @@ public class MainController {
                 fileName = "✅ " + new File(report.originalImagePath).getName();
             }
 
-            // Gán mã đề mặc định nếu chưa chọn
-            String code = studentExamCodes.getOrDefault(stt, currentConfig != null && !currentConfig.getExamCodes().isEmpty() ? currentConfig.getExamCodes().iterator().next() : "Mặc định");
-            // Ghi đè vào map để tránh rác
+            // FIX: Ưu tiên mã đề đã lưu trong bài làm, nếu chưa làm thì lấy trên giao diện
+            String code = "Mặc định";
+            if (report != null && report.examCode != null && !report.examCode.isEmpty()) {
+                code = report.examCode;
+            } else {
+                code = studentExamCodes.getOrDefault(stt, currentConfig != null && currentConfig.getExamCodes() != null && !currentConfig.getExamCodes().isEmpty() ? currentConfig.getExamCodes().iterator().next() : "Mặc định");
+            }
             studentExamCodes.put(stt, code);
 
             String score = report != null ? String.valueOf(report.totalScore) : "";
@@ -147,9 +149,8 @@ public class MainController {
     }
 
     private void initController() {
-        // --- LẮNG NGHE SỰ KIỆN GIÁO VIÊN ĐỔI MÃ ĐỀ TRÊN BẢNG ---
         view.getTblResults().getModel().addTableModelListener(e -> {
-            if (e.getColumn() == 3) { // 3 là Cột Mã Đề
+            if (e.getColumn() == 3) {
                 int row = e.getFirstRow();
                 if (row != -1 && row < currentRowStts.size()) {
                     String stt = currentRowStts.get(row);
@@ -247,7 +248,7 @@ public class MainController {
                     currentSession.setConfig(this.currentConfig);
                     DataManager.saveSession(currentSession, currentClassRoom.className);
                 }
-                refreshTable(); // Để cập nhật lại Dropdown list mã đề nếu có thêm mã mới
+                refreshTable();
                 dialog.dispose();
                 view.setStatusMessage("Đã lưu cấu hình đa mã đề: " + currentConfig.getExamCodes().size() + " mã.");
             });
@@ -555,7 +556,6 @@ public class MainController {
     }
 
     private void startGradingProcess() {
-        // Cần đảm bảo nếu user đang sửa bảng mà ấn chấm thì phải chốt bảng trước
         if (view.getTblResults().isEditing()) {
             view.getTblResults().getCellEditor().stopCellEditing();
         }
@@ -589,10 +589,7 @@ public class MainController {
                         int percent = (currentCount * 100) / totalFiles;
                         publish(new Object[]{"STATUS", "Đang chấm: " + currentCount + "/" + totalFiles + " bài (STT " + stt + ")...", percent});
 
-                        // LẤY MÃ ĐỀ ĐÃ ĐƯỢC GIÁO VIÊN CHỌN TRÊN GIAO DIỆN
                         String selectedCode = studentExamCodes.getOrDefault(stt, "Mặc định");
-
-                        // Ép cấu hình nhả đáp án của đúng mã đề đó ra cho máy chấm
                         currentConfig.setActiveCode(selectedCode);
 
                         Map<String, String> studentResults = OMRService.processExam(file.getAbsolutePath(), currentConfig);
@@ -626,7 +623,6 @@ public class MainController {
                                 }
                             }
 
-                            // Truyền cấu hình (đã được bẻ ghi đông sang mã đề chuẩn) vào ScoringEngine
                             model.OMRModels.ExamReport newReport = service.ScoringEngine.gradeExam(
                                     stt, "AUTO", studentResults, currentConfig
                             );
@@ -635,9 +631,8 @@ public class MainController {
                             newReport.studentName = fName;
                             newReport.studentSttFile = stt;
                             newReport.studentClass = currentClassRoom.className;
+                            newReport.examCode = selectedCode; // FIX: LƯU MÃ ĐỀ VÀO KẾT QUẢ
 
-                            // Lưu lại nhãn dán xem bài này đã được chấm bằng mã nào để phòng hờ
-                            // newReport.statusMessage có thể ghép thêm mã đề vào
                             String baseStatus = "";
                             if (hasError) baseStatus = "❌ Lỗi: " + String.join(", ", errorList);
                             else if (hasWarning) baseStatus = "⚠️ Nhắc: " + String.join(", ", errorList);

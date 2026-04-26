@@ -6,7 +6,7 @@ import java.util.*;
 public class OMRModels {
 
     public static class AnswerRecord implements Serializable {
-        private static final long serialVersionUID = 1L; // Cố định phiên bản
+        private static final long serialVersionUID = 1L;
 
         public String questionId;
         public String studentAnswer;
@@ -30,10 +30,10 @@ public class OMRModels {
     }
 
     public static class ExamReport implements Serializable {
-        private static final long serialVersionUID = 1L; // Cố định phiên bản
+        private static final long serialVersionUID = 1L;
 
         public String studentId;
-        public String examCode;
+        public String examCode = "Mặc định"; // FIX: Gán giá trị chống Null
         public double totalScore;
         public String imagePath;
         public List<AnswerRecord> details = new ArrayList<>();
