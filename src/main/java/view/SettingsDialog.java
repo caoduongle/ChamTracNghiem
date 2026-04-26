@@ -8,7 +8,7 @@ import java.io.File;
 import java.util.List;
 
 public class SettingsDialog extends JDialog {
-    private JCheckBox chkAutoSave, chkSound;
+    private JCheckBox chkAutoSave, chkSound, chkMultiThread, chkAutoClean;
     private JToggleButton btnToggleTheme;
     private JTextField txtExportPath;
     private JSlider sldOmrThreshold;
@@ -28,7 +28,10 @@ public class SettingsDialog extends JDialog {
         btnSave.addActionListener(e -> {
             DataManager.setAutoSavePosition(chkAutoSave.isSelected());
             DataManager.setDarkMode(btnToggleTheme.isSelected());
+            DataManager.setMultiThreadEnabled(chkMultiThread.isSelected());
+
             DataManager.setSoundEnabled(chkSound.isSelected());
+            DataManager.setAutoCleanProcessed(chkAutoClean.isSelected());
             DataManager.setDefaultExportPath(txtExportPath.getText());
 
             if (sldOmrThreshold != null) {
@@ -56,6 +59,11 @@ public class SettingsDialog extends JDialog {
         chkAutoSave.setSelected(DataManager.isAutoSavePosition());
         contentPanel.add(chkAutoSave);
 
+        chkMultiThread = new JCheckBox("⚡ Bật chế độ Chấm Siêu tốc (Đa luồng CPU)");
+        chkMultiThread.setSelected(DataManager.isMultiThreadEnabled());
+        chkMultiThread.setToolTipText("Sử dụng 100% sức mạnh CPU để chấm song song nhiều bài cùng lúc.");
+        contentPanel.add(chkMultiThread);
+
         btnToggleTheme = new JToggleButton(DataManager.isDarkMode() ? "🌙 Chế độ Tối" : "☀️ Chế độ Sáng");
         btnToggleTheme.setSelected(DataManager.isDarkMode());
         contentPanel.add(new JLabel("Giao diện:"));
@@ -64,8 +72,8 @@ public class SettingsDialog extends JDialog {
         contentPanel.add(Box.createRigidArea(new Dimension(0, 20)));
         contentPanel.add(new JLabel("Bảo trì dữ liệu:"));
 
-        JPanel pnlBtns = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 5));
-        JButton btnBackup = new JButton("📦 Sao lưu dữ liệu (Backup)");
+        JPanel pnlBtns = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
+        JButton btnBackup = new JButton("📦 Backup");
         btnBackup.addActionListener(e -> {
             JFileChooser fc = new JFileChooser();
             fc.setSelectedFile(new File("Backup_N7_" + System.currentTimeMillis() + ".zip"));
@@ -76,7 +84,7 @@ public class SettingsDialog extends JDialog {
             }
         });
 
-        JButton btnRestore = new JButton("📥 Nhập dữ liệu (Restore)");
+        JButton btnRestore = new JButton("📥 Restore");
         btnRestore.addActionListener(e -> {
             if (JOptionPane.showConfirmDialog(this, "GHI ĐÈ dữ liệu hiện tại? Hành động này không thể hoàn tác.", "Xác nhận", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
                 JFileChooser fc = new JFileChooser();
@@ -88,16 +96,25 @@ public class SettingsDialog extends JDialog {
             }
         });
 
-        pnlBtns.add(btnBackup); pnlBtns.add(Box.createHorizontalStrut(10)); pnlBtns.add(btnRestore);
+        // [FIX]: Bọc HTML để ép Emoji hiện màu cho cái chổi & Gọi hàm performDeepCleanup
+        JButton btnClearCache = new JButton("<html><span style=\"font-family: 'Segoe UI Emoji'\">🧹</span> Dọn dẹp rác</html>");
+        btnClearCache.setToolTipText("Xóa toàn bộ các ảnh xử lý thừa và dọn dẹp các thư mục rác của Lớp/Đề thi đã bị xóa.");
+        btnClearCache.addActionListener(e -> {
+            if (JOptionPane.showConfirmDialog(this, "Bạn có muốn quét sâu để dọn dẹp ảnh rác và dữ liệu mồ côi (từ các lớp/đề đã xóa) không?", "Xác nhận dọn dẹp", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+                runTaskWithProgress("Đang dọn dẹp bộ nhớ...", (listener) -> {
+                    DataManager.performDeepCleanup(listener);
+                });
+            }
+        });
+
+        pnlBtns.add(btnBackup); pnlBtns.add(btnRestore); pnlBtns.add(btnClearCache);
         contentPanel.add(pnlBtns);
 
-        // Bọc vào BorderLayout.NORTH để panel không bị giãn khi đưa vào ScrollPane
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.add(contentPanel, BorderLayout.NORTH);
 
-        // THÊM THANH CUỘN (Scrollbar)
         JScrollPane scrollPane = new JScrollPane(wrapper);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(16); // Lăn chuột mượt hơn
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         scrollPane.setBorder(null);
 
         JPanel p = new JPanel(new BorderLayout());
@@ -114,12 +131,14 @@ public class SettingsDialog extends JDialog {
         chkSound.setSelected(DataManager.isSoundEnabled());
         contentPanel.add(chkSound);
 
+        chkAutoClean = new JCheckBox("Tự động xóa ảnh xử lý nếu bài đúng 100% (Tiết kiệm dung lượng)");
+        chkAutoClean.setSelected(DataManager.isAutoCleanProcessed());
+        contentPanel.add(chkAutoClean);
+
         contentPanel.add(Box.createRigidArea(new Dimension(0, 15)));
 
-        // --- BẮT ĐẦU: KHU VỰC ĐỘ NHẠY OMR ---
         contentPanel.add(new JLabel("Độ nhạy quét nhận diện vết tô OMR (0 - 255):"));
 
-        // Tạo ô nhập số cụ thể
         JPanel pnlInput = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 5));
         pnlInput.add(new JLabel("Mức độ hiện tại: "));
 
@@ -134,7 +153,6 @@ public class SettingsDialog extends JDialog {
 
         contentPanel.add(pnlInput);
 
-        // Mở rộng thanh kéo từ 0 - 255 để đồng bộ hoàn toàn với ô nhập số
         sldOmrThreshold = new JSlider(JSlider.HORIZONTAL, 0, 255, DataManager.getOmrThreshold());
         sldOmrThreshold.setMajorTickSpacing(50);
         sldOmrThreshold.setMinorTickSpacing(10);
@@ -145,7 +163,6 @@ public class SettingsDialog extends JDialog {
         lblPreview.setAlignmentX(Component.LEFT_ALIGNMENT);
         lblPreview.setIcon(generateOmrPreview(sldOmrThreshold.getValue()));
 
-        // Hàm cập nhật chữ cảnh báo và vẽ lại ảnh
         Runnable updateUI = () -> {
             int val = sldOmrThreshold.getValue();
             String warningText = "";
@@ -158,27 +175,23 @@ public class SettingsDialog extends JDialog {
             lblPreview.setIcon(generateOmrPreview(val));
         };
 
-        // Gắn sự kiện: Kéo thanh trượt -> Cập nhật ô số & Ảnh
         sldOmrThreshold.addChangeListener(e -> {
             spnOmrValue.setValue(sldOmrThreshold.getValue());
             updateUI.run();
         });
 
-        // Gắn sự kiện: Nhập số -> Cập nhật thanh trượt & Ảnh
         spnOmrValue.addChangeListener(e -> {
             int val = (int) spnOmrValue.getValue();
             sldOmrThreshold.setValue(val);
             updateUI.run();
         });
 
-        // Chạy lần đầu để set chữ cảnh báo lúc mới mở form
         updateUI.run();
 
         contentPanel.add(sldOmrThreshold);
         contentPanel.add(Box.createRigidArea(new Dimension(0, 15)));
         contentPanel.add(lblPreview);
         contentPanel.add(Box.createRigidArea(new Dimension(0, 20)));
-        // --- KẾT THÚC: KHU VỰC ĐỘ NHẠY OMR ---
 
         contentPanel.add(new JLabel("Thư mục xuất file mặc định:"));
         JPanel pnlPath = new JPanel(new BorderLayout(5, 0));
@@ -192,13 +205,11 @@ public class SettingsDialog extends JDialog {
         pnlPath.add(txtExportPath, BorderLayout.CENTER); pnlPath.add(btnBrowse, BorderLayout.EAST);
         contentPanel.add(pnlPath);
 
-        // Bọc vào BorderLayout.NORTH để form không bị co giãn vỡ layout
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.add(contentPanel, BorderLayout.NORTH);
 
-        // THÊM THANH CUỘN (Scrollbar)
         JScrollPane scrollPane = new JScrollPane(wrapper);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(16); // Lăn chuột mượt hơn
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         scrollPane.setBorder(null);
 
         JPanel p = new JPanel(new BorderLayout());

@@ -8,6 +8,10 @@ import javax.swing.table.TableColumn;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.prefs.Preferences;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicInteger;
 
 // THƯ VIỆN KÉO THẢ
 import java.awt.dnd.DropTarget;
@@ -102,18 +106,13 @@ public class MainController {
             codeColumn.setCellEditor(new DefaultCellEditor(comboBox));
         }
 
-        // =========================================================
-        // [FIX 2]: THÊM TOOLTIP ĐỂ XEM ĐẦY ĐỦ LỖI KHI DI CHUỘT VÀO
-        // =========================================================
         TableColumn statusColumn = view.getTblResults().getColumnModel().getColumn(5);
         statusColumn.setCellRenderer(new javax.swing.table.DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
                 Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
                 if (value != null) {
-                    // Xóa các thẻ HTML cũ (nếu có) để lấy text thuần
                     String cleanText = value.toString().replaceAll("<[^>]*>", "");
-                    // Bọc lại bằng thẻ HTML có giới hạn chiều rộng 300px để tự động xuống dòng
                     ((JComponent) c).setToolTipText("<html><p width='300'>" + cleanText + "</p></html>");
                 }
                 return c;
@@ -176,10 +175,8 @@ public class MainController {
             currentRowStts.add(stt);
 
             model.OMRModels.ExamReport report = reportDatabase.get(stt);
-
             String fileName = "--- Chưa có ảnh ---";
 
-            // [FIX LOGIC]: Kiểm tra xem bài ĐÃ CHẤM XONG chưa trước!
             if (report != null && report.originalImagePath != null) {
                 fileName = "<html><span style=\"font-family: 'Segoe UI Emoji'\">✅</span> " + new File(report.originalImagePath).getName() + "</html>";
             }
@@ -772,6 +769,25 @@ public class MainController {
         dialog.setVisible(true);
     }
 
+    /**
+     * HÀM CLONE SÂU: Khắc phục lỗi Race Condition trong cấu hình khi chạy đa luồng
+     */
+    private ExamConfig deepCloneConfig(ExamConfig original) {
+        try {
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            java.io.ObjectOutputStream oos = new java.io.ObjectOutputStream(bos);
+            oos.writeObject(original);
+            oos.flush();
+            java.io.ObjectInputStream ois = new java.io.ObjectInputStream(new java.io.ByteArrayInputStream(bos.toByteArray()));
+            return (ExamConfig) ois.readObject();
+        } catch (Exception e) {
+            return original;
+        }
+    }
+
+    // =====================================================================
+    // [NEW] TIẾN TRÌNH CHẤM BÀI SIÊU TỐC ĐA LUỒNG BẰNG EXECUTOR SERVICE
+    // =====================================================================
     private void startGradingProcess() {
 
         if (view.getTblResults().isEditing() && view.getTblResults().getCellEditor() != null) {
@@ -793,127 +809,164 @@ public class MainController {
                 view.getBtnBackToMenu().setEnabled(false);
                 view.getBtnStartGrading().setEnabled(false);
                 view.getBtnSetAnswerKey().setEnabled(false);
-
                 view.getBtnStopGrading().setEnabled(true);
 
                 int totalFiles = assignedFiles.size();
-                int currentCount = 0;
+                AtomicInteger currentCount = new AtomicInteger(0); // Bộ đếm an toàn luồng
+
+                boolean useMultiThread = service.DataManager.isMultiThreadEnabled();
+                boolean autoClean = service.DataManager.isAutoCleanProcessed();
+
                 publish(new Object[]{"INIT_PROGRESS"});
 
+                // Khởi tạo Thread Pool với số luồng bằng số nhân CPU nếu bật đa luồng
+                ExecutorService executor = useMultiThread
+                        ? Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors())
+                        : Executors.newSingleThreadExecutor();
+
+                List<Callable<Void>> tasks = new ArrayList<>();
+
                 for (Map.Entry<String, File> entry : assignedFiles.entrySet()) {
-                    if (isCancelled()) {
-                        break;
-                    }
+                    tasks.add(() -> {
+                        if (isCancelled()) return null;
 
-                    currentCount++;
-                    String stt = entry.getKey();
-                    File file = entry.getValue();
+                        String stt = entry.getKey();
+                        File file = entry.getValue();
 
-                    try {
-                        int percent = (currentCount * 100) / totalFiles;
-                        publish(new Object[]{"STATUS", "Đang chấm: " + currentCount + "/" + totalFiles + " bài (STT " + stt + ")....", percent});
+                        try {
+                            // Tạo bản sao cấu hình riêng cho từng luồng để chống lỗi đè mã đề (Race Condition)
+                            ExamConfig threadConfig = useMultiThread ? deepCloneConfig(currentConfig) : currentConfig;
 
-                        String selectedCode = studentExamCodes.getOrDefault(stt, "Mặc định");
-                        currentConfig.setActiveCode(selectedCode);
+                            String selectedCode = studentExamCodes.getOrDefault(stt, "Mặc định");
+                            threadConfig.setActiveCode(selectedCode);
 
-                        Map<String, String> studentResults = OMRService.processExam(file.getAbsolutePath(), currentConfig);
+                            Map<String, String> studentResults = OMRService.processExam(file.getAbsolutePath(), threadConfig);
 
-                        if (studentResults != null) {
-                            String fName = "Chưa có tên";
-                            for (model.ClassRoom.Student st : currentClassRoom.students) {
-                                if (String.valueOf(st.stt).equals(stt)) { fName = st.name; break; }
-                            }
-
-                            boolean hasError = false;
-                            boolean hasWarning = false;
-                            List<String> errorList = new ArrayList<>();
-
-                            for (Map.Entry<String, String> entryResult : studentResults.entrySet()) {
-                                String val = entryResult.getValue();
-
-                                // =========================================================
-                                // [FIX 1]: GIỮ LẠI PHẦN 1, PHẦN 2 ĐỂ DỄ TÌM LỖI
-                                // =========================================================
-                                String qName = entryResult.getKey()
-                                        .replace("P1_", "Phần 1 - ")
-                                        .replace("P2_", "Phần 2 - ")
-                                        .replace("P3_", "Phần 3 - ")
-                                        .replace("_", " "); // Đổi dấu gạch dưới thành khoảng trắng cho đẹp
-
-                                if (val.startsWith("ERR_")) {
-                                    hasError = true;
-                                    errorList.add(qName + " (Tô đúp/Tô sai)");
-                                    studentResults.put(entryResult.getKey(), "?");
-                                } else if (val.startsWith("WARN_FMT_")) {
-                                    hasWarning = true;
-                                    errorList.add(qName + " (Sai định dạng)");
-                                    studentResults.put(entryResult.getKey(), val.substring(9));
-                                } else if (val.startsWith("WARN_")) {
-                                    hasWarning = true;
-                                    errorList.add(qName + " (Tô quá mờ)");
-                                    studentResults.put(entryResult.getKey(), val.substring(5));
-                                }
-                            }
-
-                            model.OMRModels.ExamReport newReport = service.ScoringEngine.gradeExam(
-                                    stt, "AUTO", studentResults, currentConfig
-                            );
-
-                            newReport.originalImagePath = file.getAbsolutePath();
-                            newReport.studentName = fName;
-                            newReport.studentSttFile = stt;
-                            newReport.studentClass = currentClassRoom.className;
-                            newReport.examCode = selectedCode;
-
-                            String baseStatus = "";
-                            if (hasError) {
-                                baseStatus = "<html><span style=\"font-family: 'Segoe UI Emoji'\">❌</span> Lỗi: " + String.join(", ", errorList) + "</html>";
-                            }
-                            else if (hasWarning) {
-                                baseStatus = "<html><span style=\"font-family: 'Segoe UI Emoji'\">⚠️</span> Nhắc: " + String.join(", ", errorList) + "</html>";
-                            }
-                            else {
-                                baseStatus = "<html><span style=\"font-family: 'Segoe UI Emoji'\">✅</span> Thành công</html>";
-                            }
-
-                            newReport.statusMessage = baseStatus;
-
-                            try {
-                                File imageDir = new File("data/classes/" + currentClassRoom.className + "/images/" + currentSession.getExamName());
-                                if (!imageDir.exists()) imageDir.mkdirs();
-
-                                String originalExt = ".jpg";
-                                int extIndex = file.getName().lastIndexOf('.');
-                                if (extIndex > 0) {
-                                    originalExt = file.getName().substring(extIndex);
+                            if (studentResults != null) {
+                                String fName = "Chưa có tên";
+                                for (model.ClassRoom.Student st : currentClassRoom.students) {
+                                    if (String.valueOf(st.stt).equals(stt)) { fName = st.name; break; }
                                 }
 
-                                File destFile = new File(imageDir, stt + originalExt);
-                                java.nio.file.Files.copy(file.toPath(), destFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                                newReport.imagePath = destFile.getAbsolutePath();
+                                boolean hasError = false;
+                                boolean hasWarning = false;
+                                List<String> errorList = new ArrayList<>();
 
-                                File originalProcessed = new File(file.getAbsolutePath().replace(originalExt, "_processed" + originalExt));
-                                if (originalProcessed.exists()) {
-                                    File destProcessed = new File(imageDir, stt + "_processed" + originalExt);
-                                    java.nio.file.Files.copy(originalProcessed.toPath(), destProcessed.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                                    originalProcessed.delete();
+                                for (Map.Entry<String, String> entryResult : studentResults.entrySet()) {
+                                    String val = entryResult.getValue();
+                                    String qName = entryResult.getKey()
+                                            .replace("P1_", "Phần 1 - ")
+                                            .replace("P2_", "Phần 2 - ")
+                                            .replace("P3_", "Phần 3 - ")
+                                            .replace("_", " ");
+
+                                    if (val.startsWith("ERR_")) {
+                                        hasError = true;
+                                        errorList.add(qName + " (Tô đúp)");
+                                        studentResults.put(entryResult.getKey(), "?");
+                                    } else if (val.startsWith("WARN_FMT_")) {
+                                        hasWarning = true;
+                                        errorList.add(qName + " (Lỗi Format)");
+                                        studentResults.put(entryResult.getKey(), val.substring(9));
+                                    } else if (val.startsWith("WARN_")) {
+                                        hasWarning = true;
+                                        errorList.add(qName + " (Tô mờ)");
+                                        studentResults.put(entryResult.getKey(), val.substring(5));
+                                    }
                                 }
-                            } catch (Exception ex) {
-                                newReport.imagePath = file.getAbsolutePath();
-                            }
 
-                            reportDatabase.put(stt, newReport);
-                            if (currentSession != null) {
-                                currentSession.getReports().removeIf(r -> r.studentId.equals(stt));
-                                currentSession.addReport(newReport);
-                                service.DataManager.saveSession(currentSession, currentClassRoom.className);
+                                model.OMRModels.ExamReport newReport = service.ScoringEngine.gradeExam(
+                                        stt, "AUTO", studentResults, threadConfig
+                                );
+
+                                newReport.originalImagePath = file.getAbsolutePath();
+                                newReport.studentName = fName;
+                                newReport.studentSttFile = stt;
+                                newReport.studentClass = currentClassRoom.className;
+                                newReport.examCode = selectedCode;
+
+                                String baseStatus = "";
+                                if (hasError) {
+                                    baseStatus = "<html><span style=\"font-family: 'Segoe UI Emoji'\">❌</span> Lỗi: " + String.join(", ", errorList) + "</html>";
+                                }
+                                else if (hasWarning) {
+                                    baseStatus = "<html><span style=\"font-family: 'Segoe UI Emoji'\">⚠️</span> Nhắc: " + String.join(", ", errorList) + "</html>";
+                                }
+                                else {
+                                    baseStatus = "<html><span style=\"font-family: 'Segoe UI Emoji'\">✅</span> Thành công</html>";
+                                }
+
+                                newReport.statusMessage = baseStatus;
+
+                                try {
+                                    File imageDir = new File("data/classes/" + currentClassRoom.className + "/images/" + currentSession.getExamName());
+                                    if (!imageDir.exists()) imageDir.mkdirs();
+
+                                    String originalExt = ".jpg";
+                                    int extIndex = file.getName().lastIndexOf('.');
+                                    if (extIndex > 0) {
+                                        originalExt = file.getName().substring(extIndex);
+                                    }
+
+                                    File destFile = new File(imageDir, stt + originalExt);
+                                    java.nio.file.Files.copy(file.toPath(), destFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                                    newReport.imagePath = destFile.getAbsolutePath();
+
+                                    // TÍNH NĂNG TỰ ĐỘNG XÓA RÁC (STORAGE OPTIMIZATION)
+                                    File originalProcessed = new File(file.getAbsolutePath().replace(originalExt, "_processed" + originalExt));
+                                    if (originalProcessed.exists()) {
+                                        if (autoClean && !hasError && !hasWarning) {
+                                            // Xóa luôn ảnh debug nếu bài 100% hoàn hảo
+                                            originalProcessed.delete();
+                                        } else {
+                                            // Chuyển ảnh debug vào thư mục lưu trữ
+                                            File destProcessed = new File(imageDir, stt + "_processed" + originalExt);
+                                            java.nio.file.Files.copy(originalProcessed.toPath(), destProcessed.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                                            originalProcessed.delete();
+                                        }
+                                    }
+                                } catch (Exception ex) {
+                                    newReport.imagePath = file.getAbsolutePath();
+                                }
+
+                                // Cập nhật dữ liệu an toàn (Thread-Safe)
+                                synchronized(reportDatabase) {
+                                    reportDatabase.put(stt, newReport);
+                                }
+                                synchronized(currentSession) {
+                                    currentSession.getReports().removeIf(r -> r.studentId.equals(stt));
+                                    currentSession.addReport(newReport);
+                                }
+                                publish(new Object[]{"UPDATE", stt});
                             }
-                            publish(new Object[]{"UPDATE", stt});
+                        } catch (Throwable t) {
+                            t.printStackTrace();
                         }
-                    } catch (Throwable t) {
-                        t.printStackTrace();
-                    }
+
+                        // Tăng bộ đếm an toàn luồng
+                        int completed = currentCount.incrementAndGet();
+                        int percent = (completed * 100) / totalFiles;
+                        String modeText = useMultiThread ? " (Đa luồng CPU)" : "";
+                        publish(new Object[]{"STATUS", "Đang chấm" + modeText + ": " + completed + "/" + totalFiles + " bài...", percent});
+
+                        return null;
+                    });
                 }
+
+                // Kích hoạt toàn bộ Thread chạy đồng thời và đợi đến khi xong hết
+                try {
+                    executor.invokeAll(tasks);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    executor.shutdown();
+                }
+
+                // Chỉ lưu file session đúng 1 lần vào cuối cùng để tránh thắt cổ chai Ổ cứng (I/O Bottleneck)
+                if (currentSession != null) {
+                    service.DataManager.saveSession(currentSession, currentClassRoom.className);
+                }
+
                 return null;
             }
 

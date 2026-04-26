@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.prefs.Preferences;
 import java.nio.file.*;
 import java.util.zip.*;
+import java.util.stream.Collectors;
+import java.util.Comparator;
 
 public class DataManager {
     private static final long THIRTY_DAYS_MS = 30L * 24 * 60 * 60 * 1000;
@@ -36,7 +38,7 @@ public class DataManager {
         }
     }
 
-    // --- CÀI ĐẶT HỆ THỐNG ---
+    // --- CÀI ĐẶT HỆ THỐNG CƠ BẢN ---
     public static boolean isSoundEnabled() { return sysPrefs.getBoolean("sound_enabled", true); }
     public static void setSoundEnabled(boolean enabled) { sysPrefs.putBoolean("sound_enabled", enabled); }
     public static String getDefaultExportPath() { return sysPrefs.get("default_export_path", System.getProperty("user.home") + File.separator + "Documents"); }
@@ -45,20 +47,98 @@ public class DataManager {
     public static void setAutoSavePosition(boolean enabled) { sysPrefs.putBoolean("auto_save_pos", enabled); }
     public static boolean isDarkMode() { return sysPrefs.getBoolean("dark_mode", false); }
     public static void setDarkMode(boolean enabled) { sysPrefs.putBoolean("dark_mode", enabled); }
-
-    // [NEW] LƯU TRỮ ĐỘ NHẠY OMR (Mặc định 155)
     public static int getOmrThreshold() { return sysPrefs.getInt("omr_threshold", 155); }
     public static void setOmrThreshold(int threshold) { sysPrefs.putInt("omr_threshold", threshold); }
+
+    public static boolean isMultiThreadEnabled() { return sysPrefs.getBoolean("multi_thread", false); }
+    public static void setMultiThreadEnabled(boolean enabled) { sysPrefs.putBoolean("multi_thread", enabled); }
+
+    public static boolean isAutoCleanProcessed() { return sysPrefs.getBoolean("auto_clean_processed", true); }
+    public static void setAutoCleanProcessed(boolean enabled) { sysPrefs.putBoolean("auto_clean_processed", enabled); }
+
+    // =========================================================
+    // [NEW] THUẬT TOÁN DỌN DẸP SÂU (DEEP CLEANUP)
+    // =========================================================
+    public static void performDeepCleanup(ProgressListener listener) throws IOException {
+        Path classesDir = Paths.get("data/classes");
+        if (!Files.exists(classesDir)) return;
+
+        int current = 0;
+
+        // BƯỚC 1: Xóa thư mục của các Lớp đã bị xóa vĩnh viễn hoặc nằm trong thùng rác
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(classesDir)) {
+            for (Path entry : stream) {
+                if (Files.isDirectory(entry) && !entry.getFileName().toString().equals("trash")) {
+                    String className = entry.getFileName().toString();
+                    Path classDatFile = classesDir.resolve(className + ".dat");
+                    if (!Files.exists(classDatFile)) {
+                        deleteDirectoryRecursively(entry);
+                        if (listener != null) listener.onProgress(++current, 100, "Xóa dữ liệu lớp mồ côi: " + className);
+                    }
+                }
+            }
+        }
+
+        // BƯỚC 2: Quét các Lớp hợp lệ để xóa thư mục ảnh của các Đề thi đã bị xóa
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(classesDir)) {
+            for (Path entry : stream) {
+                if (Files.isDirectory(entry) && !entry.getFileName().toString().equals("trash")) {
+                    String className = entry.getFileName().toString();
+                    Path classDatFile = classesDir.resolve(className + ".dat");
+                    if (Files.exists(classDatFile)) {
+                        Path imagesDir = entry.resolve("images");
+                        Path examsDir = entry.resolve("exams");
+
+                        if (Files.exists(imagesDir)) {
+                            try (DirectoryStream<Path> imgStream = Files.newDirectoryStream(imagesDir)) {
+                                for (Path examImgFolder : imgStream) {
+                                    if (Files.isDirectory(examImgFolder)) {
+                                        String examName = examImgFolder.getFileName().toString();
+                                        Path examDatFile = examsDir.resolve(examName + ".dat");
+                                        if (!Files.exists(examDatFile)) {
+                                            deleteDirectoryRecursively(examImgFolder);
+                                            if (listener != null) listener.onProgress(++current, 100, "Xóa dữ liệu đề mồ côi: " + examName);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // BƯỚC 3: Xóa các file ảnh _processed.jpg (như cũ)
+        List<Path> processedFiles = Files.walk(classesDir)
+                .filter(p -> !Files.isDirectory(p) && p.getFileName().toString().contains("_processed."))
+                .collect(Collectors.toList());
+
+        int totalProcessed = processedFiles.size();
+        for (Path p : processedFiles) {
+            if (listener != null && listener.isCanceled()) break;
+            current++;
+            Files.deleteIfExists(p);
+            if (listener != null) listener.onProgress(current, current + totalProcessed, "Đang dọn ảnh rác: " + p.getFileName().toString());
+        }
+    }
+
+    // Hàm đệ quy hỗ trợ xóa thư mục (Xóa file bên trong trước, xóa thư mục sau)
+    private static void deleteDirectoryRecursively(Path path) throws IOException {
+        if (Files.exists(path)) {
+            Files.walk(path)
+                    .sorted(Comparator.reverseOrder())
+                    .map(Path::toFile)
+                    .forEach(File::delete);
+        }
+    }
+    // =========================================================
 
     // --- LOGIC SAO LƯU (BACKUP) ---
     public static void backupData(File targetZip, ProgressListener listener) throws IOException {
         Path sourceDirPath = Paths.get("data");
         if (!Files.exists(sourceDirPath)) return;
 
-        List<Path> allFiles = Files.walk(sourceDirPath)
-                .filter(path -> !Files.isDirectory(path))
-                .collect(java.util.stream.Collectors.toList());
-
+        List<Path> allFiles = Files.walk(sourceDirPath).filter(path -> !Files.isDirectory(path)).collect(Collectors.toList());
         int totalFiles = allFiles.size();
         int current = 0;
 
