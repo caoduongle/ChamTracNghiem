@@ -19,15 +19,18 @@ import java.util.stream.Collectors;
 
 public class DashboardDialog extends JDialog {
 
+    private ExamSession session; // Lưu lại session để truyền sang màn hình phân tích
+
     public DashboardDialog(JFrame parent, ExamSession session) {
         super(parent, "Dashboard Thống kê - Đề: " + session.getExamName(), true);
+        this.session = session;
         setSize(1200, 800);
         setLocationRelativeTo(parent);
         setLayout(new BorderLayout(10, 10));
 
         List<ExamReport> allReports = session.getReports();
 
-        // [FIX] Lọc bỏ các bài lỗi bằng cách chỉ tìm icon dấu X đỏ, bỏ qua các thẻ HTML
+        // Lọc bỏ các bài lỗi bằng cách chỉ tìm icon dấu X đỏ, bỏ qua các thẻ HTML
         List<ExamReport> validReports = allReports.stream()
                 .filter(r -> r.statusMessage == null || !r.statusMessage.contains("❌"))
                 .collect(Collectors.toList());
@@ -71,6 +74,30 @@ public class DashboardDialog extends JDialog {
     private JPanel createTabForCode(String code, List<ExamReport> reports) {
         JPanel pnlTab = new JPanel(new BorderLayout(10, 10));
         pnlTab.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        // ====================================================================
+        // [NEW] KHU VỰC HEADER CHỨA NÚT "PHÂN TÍCH CHUYÊN SÂU" CHO TỪNG MÃ ĐỀ
+        // ====================================================================
+        JPanel pnlHeader = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+
+// [FIX]: Sử dụng HTML để ép font Segoe UI Emoji cho riêng icon kính lúp
+        JButton btnAnalyze = new JButton("<html><span style=\"font-family: 'Segoe UI Emoji'\">🔍</span> Phân tích chi tiết chuyên sâu (Độ khó & Phân hóa)</html>");
+
+        btnAnalyze.setBackground(new Color(0, 102, 204));
+        btnAnalyze.setForeground(Color.WHITE);
+        btnAnalyze.setFont(new Font("Arial", Font.BOLD, 13));
+        btnAnalyze.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+// Nếu nút bấm bị mất màu nền xanh khi dùng FlatLaf, hãy thêm dòng này:
+        btnAnalyze.putClientProperty("JButton.buttonType", "roundRect");
+        btnAnalyze.addActionListener(e -> {
+            // Gọi hộp thoại ItemAnalysisDialog (Mã nguồn đã cung cấp ở bước trước)
+            new ItemAnalysisDialog(DashboardDialog.this, session, code).setVisible(true);
+        });
+
+        pnlHeader.add(btnAnalyze);
+        pnlTab.add(pnlHeader, BorderLayout.NORTH);
+        // ====================================================================
 
         int[] scoreDistribution = new int[11];
         int gioi = 0, kha = 0, trungBinh = 0, yeu = 0;

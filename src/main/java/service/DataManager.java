@@ -196,7 +196,7 @@ public class DataManager {
         int totalFiles = allFiles.size();
         int current = 0;
 
-        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(targetZip))) {
+        try (ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(targetZip)))) {
             for (Path path : allFiles) {
                 if (listener != null && listener.isCanceled()) throw new IOException("Người dùng đã hủy.");
                 current++;
@@ -219,7 +219,7 @@ public class DataManager {
         try (ZipFile zip = new ZipFile(zipFile)) { totalEntries = zip.size(); }
 
         int current = 0;
-        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipFile))) {
+        try (ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)))) {
             ZipEntry entry = zis.getNextEntry();
             while (entry != null) {
                 if (listener != null && listener.isCanceled()) throw new IOException("Người dùng đã hủy.");
@@ -251,20 +251,22 @@ public class DataManager {
         try {
             File dir = new File(getExamDir(className));
             if (!dir.exists()) dir.mkdirs();
-            try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(getExamDir(className) + session.getExamName() + ".dat"))) {
+            // [CLEAN CODE] Bọc BufferedOutputStream để tối ưu tốc độ I/O
+            try (ObjectOutputStream oos = new ObjectOutputStream(new BufferedOutputStream(new FileOutputStream(getExamDir(className) + session.getExamName() + ".dat")))) {
                 oos.writeObject(session);
             }
         } catch (Exception e) { e.printStackTrace(); }
     }
 
     public static ExamSession loadSession(String examName, String className) {
-        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(getExamDir(className) + examName + ".dat"))) {
+        // [CLEAN CODE] Bọc BufferedInputStream
+        try (ObjectInputStream ois = new ObjectInputStream(new BufferedInputStream(new FileInputStream(getExamDir(className) + examName + ".dat")))) {
             return (ExamSession) ois.readObject();
         } catch (Exception e) { return null; }
     }
 
     public static List<String> listSavedExams(String className) {
-        cleanTrashInDirectory(getTrashDir(className)); // Áp dụng hàm DRY
+        cleanTrashInDirectory(getTrashDir(className));
         List<String> exams = new ArrayList<>();
         File dir = new File(getExamDir(className));
         if (dir.exists()) {
@@ -335,20 +337,22 @@ public class DataManager {
     public static void saveClass(model.ClassRoom cr) {
         try {
             File dir = new File(CLASS_DIR); if (!dir.exists()) dir.mkdirs();
-            try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(CLASS_DIR + cr.className + ".dat"))) {
+            // [CLEAN CODE] Bọc BufferedOutputStream
+            try (ObjectOutputStream oos = new ObjectOutputStream(new BufferedOutputStream(new FileOutputStream(CLASS_DIR + cr.className + ".dat")))) {
                 oos.writeObject(cr);
             }
         } catch (Exception e) { e.printStackTrace(); }
     }
 
     public static model.ClassRoom loadClass(String className) {
-        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(CLASS_DIR + className + ".dat"))) {
+        // [CLEAN CODE] Bọc BufferedInputStream
+        try (ObjectInputStream ois = new ObjectInputStream(new BufferedInputStream(new FileInputStream(CLASS_DIR + className + ".dat")))) {
             return (model.ClassRoom) ois.readObject();
         } catch (Exception e) { return null; }
     }
 
     public static List<String> listClasses() {
-        cleanTrashInDirectory(CLASS_TRASH_DIR); // Áp dụng hàm DRY
+        cleanTrashInDirectory(CLASS_TRASH_DIR);
         List<String> list = new ArrayList<>();
         File dir = new File(CLASS_DIR);
         if (dir.exists()) {
@@ -410,9 +414,6 @@ public class DataManager {
         if (target.exists()) target.delete();
     }
 
-    // =========================================================
-    // [REFACTOR] HÀM TIỆN ÍCH DÙNG CHUNG (ÁP DỤNG DRY)
-    // =========================================================
     private static void cleanTrashInDirectory(String dirPath) {
         File dir = new File(dirPath);
         if (!dir.exists()) return;
