@@ -19,7 +19,7 @@ import java.util.List;
 public class StartupDialog extends JDialog {
     private JTable tblExams;
     private DefaultTableModel tableModel;
-    private JButton btnNew, btnOpen, btnDelete, btnTrash, btnTutorial, btnRename, btnBackToClass;
+    private JButton btnNew, btnOpen, btnDelete, btnTrash, btnTutorial, btnRename, btnBackToClass, btnConnectPhone;
     private String selectedExam = null;
     private boolean isNew = false;
     private boolean goBackToClass = false;
@@ -86,7 +86,6 @@ public class StartupDialog extends JDialog {
         };
         tblExams = new JTable(tableModel);
         tblExams.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        // Đổi con trỏ chuột thành hình bàn tay
         tblExams.setCursor(new Cursor(Cursor.HAND_CURSOR));
 
         refreshExamList();
@@ -106,22 +105,24 @@ public class StartupDialog extends JDialog {
         btnDelete = new JButton("❌ Xóa đề");
         btnTrash = new JButton("🗑 Thùng rác");
         btnTutorial = new JButton("Hướng dẫn");
-
         btnBackToClass = new JButton("⬅ Trở lại Chọn Lớp");
         btnBackToClass.setForeground(new Color(200, 50, 0));
 
-        pnlBtns.add(btnNew); pnlBtns.add(btnOpen);
-        pnlBtns.add(btnRename); pnlBtns.add(btnDelete);
-        pnlBtns.add(btnTrash); pnlBtns.add(btnTutorial);
-        pnlBtns.add(btnBackToClass);
-        pnlBtns.add(new JLabel(""));
+        // [MỚI]
+        btnConnectPhone = new JButton("📱 Kết nối Điện thoại");
+        btnConnectPhone.setBackground(new Color(0, 123, 255));
+        btnConnectPhone.setForeground(Color.WHITE);
+
+        pnlBtns.add(btnConnectPhone); pnlBtns.add(btnOpen);
+        pnlBtns.add(btnNew); pnlBtns.add(btnRename);
+        pnlBtns.add(btnDelete); pnlBtns.add(btnTrash);
+        pnlBtns.add(btnTutorial); pnlBtns.add(btnBackToClass);
 
         pnlBottomControls.add(pnlBtns, BorderLayout.CENTER);
         add(pnlBottomControls, BorderLayout.SOUTH);
 
-        // ====================================================================
-        // [UX NÂNG CẤP]: MENU CHUỘT PHẢI (CONTEXT MENU) GIỐNG FILE EXPLORER
-        // ====================================================================
+        btnConnectPhone.addActionListener(e -> showConnectionDialog());
+
         JPopupMenu popupMenu = new JPopupMenu();
         JMenuItem itemOpen = new JMenuItem("✔ Mở đề thi này");
         JMenuItem itemRename = new JMenuItem("📝 Đổi tên đề thi");
@@ -136,39 +137,31 @@ public class StartupDialog extends JDialog {
         popupMenu.addSeparator();
         popupMenu.add(itemDel);
 
-        // Kích hoạt nút bấm tương ứng trên giao diện
         itemOpen.addActionListener(e -> btnOpen.doClick());
         itemRename.addActionListener(e -> btnRename.doClick());
         itemDel.addActionListener(e -> btnDelete.doClick());
 
-        // Bắt sự kiện chuột cho bảng tblExams
         tblExams.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                // Click đúp chuột trái
                 if (SwingUtilities.isLeftMouseButton(e) && e.getClickCount() == 2) {
                     int row = tblExams.rowAtPoint(e.getPoint());
-                    if (row != -1) {
-                        btnOpen.doClick();
-                    }
+                    if (row != -1) btnOpen.doClick();
                 }
             }
 
             @Override
             public void mouseReleased(MouseEvent e) {
-                // Click chuột phải
                 if (SwingUtilities.isRightMouseButton(e) || e.isPopupTrigger()) {
                     int row = tblExams.rowAtPoint(e.getPoint());
                     if (row != -1) {
-                        tblExams.setRowSelectionInterval(row, row); // Tự động bôi đen
+                        tblExams.setRowSelectionInterval(row, row);
                         popupMenu.show(e.getComponent(), e.getX(), e.getY());
                     }
                 }
             }
         });
-        // ====================================================================
 
-        // --- SỰ KIỆN NÚT BẤM (GIỮ NGUYÊN) ---
         txtSearch.getDocument().addDocumentListener(new DocumentListener() {
             public void insertUpdate(DocumentEvent e) { applyFilters(); }
             public void removeUpdate(DocumentEvent e) { applyFilters(); }
@@ -236,6 +229,24 @@ public class StartupDialog extends JDialog {
         setLocationRelativeTo(parent);
         service.WindowPersistenceManager.restoreWindow(this, "StartupDialog", 650, 700);
         service.WindowPersistenceManager.attachSaver(this, "StartupDialog");
+    }
+
+    private void showConnectionDialog() {
+        String myIP = service.LocalServer.getLocalIP();
+        String connectionURL = "http://" + myIP + ":8080";
+        JDialog dialog = new JDialog(this, "Kết nối với App Điện thoại", true);
+        dialog.setLayout(new BorderLayout(10, 10));
+        JLabel lblInstruction = new JLabel("<html><center>Mở App trên điện thoại và quét mã này để kết nối<br><b>" + connectionURL + "</b></center></html>", SwingConstants.CENTER);
+        lblInstruction.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        JLabel lblQR = new JLabel(service.QRService.generateQRCode(connectionURL, 300, 300));
+        JButton btnClose = new JButton("Đóng");
+        btnClose.addActionListener(e -> dialog.dispose());
+        dialog.add(lblInstruction, BorderLayout.NORTH);
+        dialog.add(lblQR, BorderLayout.CENTER);
+        dialog.add(btnClose, BorderLayout.SOUTH);
+        dialog.pack();
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
     }
 
     private void refreshExamList() {

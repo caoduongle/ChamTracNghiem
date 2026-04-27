@@ -12,7 +12,7 @@ public class SettingsDialog extends JDialog {
     private JToggleButton btnToggleTheme;
     private JTextField txtExportPath;
     private JSlider sldOmrThreshold;
-    private JComboBox<String> cbxAutoCleanup; // Thêm biến mới
+    private JComboBox<String> cbxAutoCleanup;
 
     public SettingsDialog(JFrame parent) {
         super(parent, "Cài đặt hệ thống - Team N7", true);
@@ -35,7 +35,6 @@ public class SettingsDialog extends JDialog {
             DataManager.setAutoCleanProcessed(chkAutoClean.isSelected());
             DataManager.setDefaultExportPath(txtExportPath.getText());
 
-            // Lưu chế độ dọn rác tự động
             if (cbxAutoCleanup != null) {
                 DataManager.setAutoCleanupMode(cbxAutoCleanup.getSelectedIndex());
             }
@@ -78,7 +77,6 @@ public class SettingsDialog extends JDialog {
         contentPanel.add(Box.createRigidArea(new Dimension(0, 20)));
         contentPanel.add(new JLabel("Bảo trì & Dọn dẹp:"));
 
-        // [NEW] Khu vực cài đặt Auto Cleanup
         JPanel pnlAutoClean = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 5));
         pnlAutoClean.add(new JLabel("Quét dọn hệ thống ngầm: "));
         String[] cleanupModes = {

@@ -5,9 +5,7 @@ import model.ClassRoom;
 import service.DataManager;
 import service.ExcelService;
 import service.WindowPersistenceManager;
-
 import org.apache.poi.ss.usermodel.*;
-
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
@@ -18,8 +16,6 @@ import java.awt.event.MouseEvent;
 import java.io.File;
 import java.util.List;
 import java.util.prefs.Preferences;
-
-// THƯ VIỆN KÉO THẢ
 import java.awt.dnd.DropTarget;
 import java.awt.dnd.DropTargetDropEvent;
 import java.awt.dnd.DnDConstants;
@@ -60,15 +56,21 @@ public class ClassManagementDialog extends JDialog {
         JButton btnTrash = new JButton("🗑 Thùng rác lớp học");
         JButton btnClassDashboard = new JButton("📈 Thống kê Tổng quan Lớp");
         JButton btnSettings = new JButton("⚙ Cài đặt hệ thống");
-        JLabel emptyLabel = new JLabel("");
 
-        pnlBtns.add(btnNew); pnlBtns.add(btnOpen);
-        pnlBtns.add(btnRename); pnlBtns.add(btnEdit);
+        // [MỚI] Nút kết nối điện thoại
+        JButton btnConnectPhone = new JButton("📱 Kết nối Điện thoại");
+        btnConnectPhone.setBackground(new Color(0, 123, 255));
+        btnConnectPhone.setForeground(Color.WHITE);
+
+        pnlBtns.add(btnConnectPhone); pnlBtns.add(btnOpen);
+        pnlBtns.add(btnNew); pnlBtns.add(btnEdit);
+        pnlBtns.add(btnRename); pnlBtns.add(btnClassDashboard);
         pnlBtns.add(btnDel); pnlBtns.add(btnTrash);
-        pnlBtns.add(btnClassDashboard); pnlBtns.add(btnSettings);
-        pnlBtns.add(emptyLabel);
+        pnlBtns.add(btnSettings);
 
         add(pnlBtns, BorderLayout.SOUTH);
+
+        btnConnectPhone.addActionListener(e -> showConnectionDialog());
 
         JPopupMenu popupMenu = new JPopupMenu();
         JMenuItem itemOpen = new JMenuItem("✔ Mở lớp này");
@@ -210,6 +212,25 @@ public class ClassManagementDialog extends JDialog {
             if (cr != null) model.addRow(new Object[]{cr.className, cr.students.size()});
         }
     }
+
+    private void showConnectionDialog() {
+        String myIP = service.LocalServer.getLocalIP();
+        String connectionURL = "http://" + myIP + ":8080";
+        JDialog dialog = new JDialog(this, "Kết nối với App Điện thoại", true);
+        dialog.setLayout(new BorderLayout(10, 10));
+        JLabel lblInstruction = new JLabel("<html><center>Mở App trên điện thoại và quét mã này để kết nối<br><b>" + connectionURL + "</b></center></html>", SwingConstants.CENTER);
+        lblInstruction.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        JLabel lblQR = new JLabel(service.QRService.generateQRCode(connectionURL, 300, 300));
+        JButton btnClose = new JButton("Đóng");
+        btnClose.addActionListener(e -> dialog.dispose());
+        dialog.add(lblInstruction, BorderLayout.NORTH);
+        dialog.add(lblQR, BorderLayout.CENTER);
+        dialog.add(btnClose, BorderLayout.SOUTH);
+        dialog.pack();
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+    }
+
     public ClassRoom getSelectedClass() { return selectedClass; }
 }
 
@@ -328,7 +349,6 @@ class ClassEditorDialog extends JDialog {
         WindowPersistenceManager.attachSaver(this, "ClassEditorDialog");
     }
 
-    // [CLEAN CODE]: Dùng các class ngắn gọn nhờ việc gộp Import ở đầu file
     private void processExcelFile(File file) {
         try (Workbook workbook = WorkbookFactory.create(file)) {
 
@@ -366,16 +386,15 @@ class ClassEditorDialog extends JDialog {
             JOptionPane.showMessageDialog(this, "Đã import thành công " + count + " học sinh!");
 
         } catch (Exception ex) {
-            ex.printStackTrace();
             if (ex.getMessage() != null && ex.getMessage().contains("neither an OLE2 stream, nor an OOXML stream")) {
-                JOptionPane.showMessageDialog(this, "Lỗi: File Excel giả mạo (thực chất là CSV/Văn bản đổi đuôi).\n\nCÁCH KHẮC PHỤC:\n1. Mở file này bằng phần mềm Excel.\n2. Chọn File -> Save As.\n3. Lưu lại với định dạng Excel Workbook (*.xlsx) rồi import lại.", "Sai định dạng file", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Lỗi: File Excel giả mạo.\nLưu lại với định dạng Excel Workbook (*.xlsx) rồi import lại.", "Sai định dạng file", JOptionPane.ERROR_MESSAGE);
             } else {
                 JOptionPane.showMessageDialog(this, "Lỗi đọc file: " + ex.getMessage(), "Lỗi", JOptionPane.ERROR_MESSAGE);
             }
         }
     }
 
-    @SuppressWarnings("unchecked") // Tắt cảnh báo ép kiểu mảng File khi kéo thả
+    @SuppressWarnings("unchecked")
     private void enableDragAndDrop() {
         this.setDropTarget(new DropTarget() {
             public synchronized void drop(DropTargetDropEvent evt) {

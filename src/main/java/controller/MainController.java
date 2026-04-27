@@ -53,12 +53,33 @@ public class MainController {
     public MainController(MainView view) {
         this.view = view;
         this.tableManager = new ResultTableManager(view);
+
+        // [QUAN TRỌNG]: Bật Server ngay khi mở PC để Điện thoại kết nối lúc nào cũng được
+        startGlobalServer();
+
         initController();
         initApp();
 
         if (DataManager.getAutoCleanupMode() == 1) {
             DataManager.performSilentDeepCleanup();
         }
+    }
+
+    private void startGlobalServer() {
+        service.LocalServer.startServer(8080, (className, examName, stt, templateId, imagePath) -> {
+            SwingUtilities.invokeLater(() -> {
+                // Chỉ nạp ảnh vào Bảng nếu Màn hình PC ĐANG MỞ đúng Lớp đó và đúng Đề đó
+                if (currentClassRoom != null && currentClassRoom.className.equals(className)
+                        && currentSession != null && currentSession.getExamName().equals(examName)) {
+
+                    assignedFiles.put(stt, new java.io.File(imagePath));
+                    refreshTable();
+                    view.setStatusMessage("📱 App vừa gửi bài của STT: " + stt + " (Mẫu: " + templateId + ")");
+                }
+            });
+        });
+        view.getLblServerStatus().setText("📡 Server: Online (" + service.LocalServer.getLocalIP() + ":8080)");
+        view.getLblServerStatus().setForeground(new Color(0, 150, 0)); // Màu xanh
     }
 
     public void initApp() {
@@ -120,27 +141,6 @@ public class MainController {
             tableManager.updateExamCodeEditor(currentConfig.getExamCodes());
         }
         refreshTable();
-        // Bật Server lắng nghe ở cổng 8080
-        service.LocalServer.startServer(8080, (incomingClass, incomingExam, stt, templateId, imagePath) -> {
-            javax.swing.SwingUtilities.invokeLater(() -> {
-                // [CẢI TIẾN]: Chỉ chấp nhận ảnh nếu đúng Lớp và đúng Đề đang mở
-                if (currentClassRoom != null && currentSession != null
-                        && currentClassRoom.className.equals(incomingClass)
-                        && currentSession.getExamName().equals(incomingExam)) {
-
-                    assignedFiles.put(stt, new java.io.File(imagePath));
-                    refreshTable();
-                    view.setStatusMessage("📱 Vừa nhận ảnh từ điện thoại cho STT: " + stt + " (Mẫu: " + templateId + ")");
-                } else {
-                    // Cảnh báo nếu điện thoại gửi nhầm lớp
-                    System.out.println("⚠️ Bỏ qua ảnh: App gửi lớp '" + incomingClass + "' nhưng PC đang mở '" + (currentClassRoom != null ? currentClassRoom.className : "null") + "'");
-                }
-            });
-        });
-
-        // Cập nhật tiêu đề cửa sổ để hiển thị IP cho bạn biết đường kết nối
-        String myIP = service.LocalServer.getLocalIP();
-        view.setTitle("Phần mềm Chấm Thi | Lớp: " + currentClassRoom.className + " | Đề: " + currentSession.getExamName() + " | 📡 IP: " + myIP + ":8080");
     }
 
     private void refreshTable() {
@@ -149,6 +149,8 @@ public class MainController {
 
     private void initController() {
         view.setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
+
+        view.getBtnConnectPhone().addActionListener(e -> showConnectionDialog());
 
         view.getTblResults().getModel().addTableModelListener(e -> {
             if (e.getColumn() == 3) {
@@ -180,7 +182,7 @@ public class MainController {
                 this.currentSession = null;
                 this.reportDatabase.clear();
                 this.assignedFiles.clear();
-                service.LocalServer.stopServer();
+                // [LƯU Ý]: KHÔNG ĐƯỢC TẮT SERVER Ở ĐÂY NỮA
                 showStartupMenu(false);
             }
         });
@@ -224,9 +226,6 @@ public class MainController {
             }
         });
 
-        // ====================================================================
-        // [CLEAN CODE] TÍCH HỢP CHUỘT PHẢI (CONTEXT MENU) VÀO BẢNG
-        // ====================================================================
         JPopupMenu popupMenu = new JPopupMenu();
         JMenuItem itemDetail = new JMenuItem("🔍 Xem chi tiết & Sửa điểm");
         JMenuItem itemReassign = new JMenuItem("📁 Gán ảnh bài làm");
@@ -243,7 +242,6 @@ public class MainController {
         view.getTblResults().addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                // Click đúp chuột trái
                 if (SwingUtilities.isLeftMouseButton(e) && e.getClickCount() == 2) {
                     int row = ((JTable) e.getSource()).getSelectedRow();
                     if (row != -1) {
@@ -256,7 +254,6 @@ public class MainController {
 
             @Override
             public void mouseReleased(MouseEvent e) {
-                // Click chuột phải
                 if (SwingUtilities.isRightMouseButton(e) || e.isPopupTrigger()) {
                     int row = view.getTblResults().rowAtPoint(e.getPoint());
                     if (row != -1) {
@@ -290,7 +287,6 @@ public class MainController {
                 }
             }
         });
-        // ====================================================================
 
         view.getBtnSetAnswerKey().addActionListener(e -> {
             AnswerKeyDialog dialog = new AnswerKeyDialog(view);
@@ -410,9 +406,6 @@ public class MainController {
         });
     }
 
-    // ====================================================================
-    // [CLEAN CODE] GỘP HÀM XÓA ẢNH (DRY PRINCIPLE)
-    // ====================================================================
     private void deleteImageFiles(String imagePath) {
         if (imagePath == null) return;
         try {
@@ -422,9 +415,7 @@ public class MainController {
                 String ext = imagePath.substring(dotIndex);
                 java.nio.file.Files.deleteIfExists(new File(imagePath.replace(ext, "_processed" + ext)).toPath());
             }
-        } catch (Exception ex) {
-            // Bỏ qua nếu lỗi (file đang mở hoặc không tồn tại)
-        }
+        } catch (Exception ex) {}
     }
 
     private void handleStudentDoubleClick(String stt, String name) {
@@ -442,7 +433,6 @@ public class MainController {
                     "Học sinh " + name + " đang có ảnh bài làm. Bạn muốn làm gì?",
                     "Tùy chọn thao tác", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
 
-            // [CLEAN CODE] Bỏ if lồng lặp lại
             if (choice == 0) {
                 if (report != null) {
                     new WrongAnswerDialog(view, report, currentConfig, () -> {
@@ -466,9 +456,7 @@ public class MainController {
         int confirm = JOptionPane.showConfirmDialog(view, "Bạn có chắc muốn hủy kết quả và xóa ảnh bài làm của học sinh: " + name + "?", "Xác nhận xóa", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (confirm == JOptionPane.YES_OPTION) {
             model.OMRModels.ExamReport report = reportDatabase.get(stt);
-            if (report != null) {
-                deleteImageFiles(report.imagePath); // Gọi hàm dùng chung
-            }
+            if (report != null) deleteImageFiles(report.imagePath);
             reportDatabase.remove(stt);
             assignedFiles.remove(stt);
             if (currentSession != null) {
@@ -494,9 +482,7 @@ public class MainController {
 
             for (String stt : sttsToDelete) {
                 model.OMRModels.ExamReport report = reportDatabase.get(stt);
-                if (report != null) {
-                    deleteImageFiles(report.imagePath); // Gọi hàm dùng chung
-                }
+                if (report != null) deleteImageFiles(report.imagePath);
                 reportDatabase.remove(stt);
                 assignedFiles.remove(stt);
                 if (currentSession != null) currentSession.getReports().removeIf(r -> r.studentId.equals(stt));
@@ -598,9 +584,7 @@ public class MainController {
             return;
         }
 
-        if (hasOldImagesLoaded) {
-            refreshTable();
-        }
+        if (hasOldImagesLoaded) refreshTable();
 
         if (currentConfig == null) {
             JOptionPane.showMessageDialog(view, "Vui lòng cài đặt đáp án trước khi chấm!", "Thiếu thông tin", JOptionPane.WARNING_MESSAGE);
@@ -612,7 +596,30 @@ public class MainController {
                 reportDatabase, assignedFiles, studentExamCodes,
                 () -> refreshTable()
         );
-
         gradingWorker.execute();
+    }
+
+    private void showConnectionDialog() {
+        String myIP = service.LocalServer.getLocalIP();
+        String connectionURL = "http://" + myIP + ":8080";
+
+        JDialog dialog = new JDialog(view, "Kết nối với App Điện thoại", true);
+        dialog.setLayout(new BorderLayout(10, 10));
+
+        JLabel lblInstruction = new JLabel("<html><center>Mở App trên điện thoại và quét mã này để kết nối<br><b>" + connectionURL + "</b></center></html>", SwingConstants.CENTER);
+        lblInstruction.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        JLabel lblQR = new JLabel(service.QRService.generateQRCode(connectionURL, 300, 300));
+
+        JButton btnClose = new JButton("Đóng");
+        btnClose.addActionListener(e -> dialog.dispose());
+
+        dialog.add(lblInstruction, BorderLayout.NORTH);
+        dialog.add(lblQR, BorderLayout.CENTER);
+        dialog.add(btnClose, BorderLayout.SOUTH);
+
+        dialog.pack();
+        dialog.setLocationRelativeTo(view);
+        dialog.setVisible(true);
     }
 }
