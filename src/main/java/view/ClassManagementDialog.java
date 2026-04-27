@@ -320,9 +320,15 @@ class ClassEditorDialog extends JDialog {
             }
             txtSize.setText(String.valueOf(count));
             JOptionPane.showMessageDialog(this, "Đã import thành công " + count + " học sinh!");
+
         } catch (Exception ex) {
             ex.printStackTrace();
-            JOptionPane.showMessageDialog(this, "Lỗi đọc file: " + ex.getMessage());
+            // [FIX BẮT LỖI]: Báo rõ cho giáo viên nếu file là CSV bị đổi đuôi
+            if (ex.getMessage() != null && ex.getMessage().contains("neither an OLE2 stream, nor an OOXML stream")) {
+                JOptionPane.showMessageDialog(this, "Lỗi: File Excel giả mạo (thực chất là CSV/Văn bản đổi đuôi).\n\nCÁCH KHẮC PHỤC:\n1. Mở file này bằng phần mềm Excel.\n2. Chọn File -> Save As.\n3. Lưu lại với định dạng Excel Workbook (*.xlsx) rồi import lại.", "Sai định dạng file", JOptionPane.ERROR_MESSAGE);
+            } else {
+                JOptionPane.showMessageDialog(this, "Lỗi đọc file: " + ex.getMessage(), "Lỗi", JOptionPane.ERROR_MESSAGE);
+            }
         }
     }
 

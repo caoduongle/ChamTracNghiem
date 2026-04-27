@@ -2,7 +2,6 @@ package view;
 
 import model.ExamConfig;
 import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
@@ -127,13 +126,13 @@ public class AnswerKeyDialog extends JDialog {
                     tblAnswers.getCellEditor().stopCellEditing();
                 }
 
-                saveUIToCache(); // Lưu bảng hiện tại vào bộ nhớ
-                currentCode = cbxExamCodes.getSelectedItem().toString(); // Đổi mã
+                saveUIToCache();
+                currentCode = cbxExamCodes.getSelectedItem().toString();
                 tblAnswers.getColumnModel().getColumn(2).setHeaderValue("Đáp án đúng (" + currentCode + ")");
                 tblAnswers.getTableHeader().repaint();
 
-                updateTable(); // Vẽ lại khung bảng
-                loadUIFromCache(); // Load dữ liệu của mã mới lên
+                updateTable();
+                loadUIFromCache();
             }
         });
 
@@ -158,15 +157,12 @@ public class AnswerKeyDialog extends JDialog {
             if (confirm == JOptionPane.YES_OPTION) {
                 String codeToDelete = currentCode;
 
-                // [FIX 1]: Khóa listener lại để ngăn saveUIToCache tự động gọi và lưu lại mã vừa xóa
                 isUpdatingCombo = true;
                 cbxModel.removeElement(codeToDelete);
 
-                // Cập nhật an toàn sang mã khác
                 currentCode = cbxModel.getElementAt(0);
                 cbxExamCodes.setSelectedIndex(0);
 
-                // Xóa tận gốc khỏi bộ đệm
                 uiCache.remove(codeToDelete);
 
                 tblAnswers.getColumnModel().getColumn(2).setHeaderValue("Đáp án đúng (" + currentCode + ")");
@@ -174,7 +170,7 @@ public class AnswerKeyDialog extends JDialog {
                 updateTable();
                 loadUIFromCache();
 
-                isUpdatingCombo = false; // Mở lại listener
+                isUpdatingCombo = false;
             }
         });
 
@@ -183,7 +179,6 @@ public class AnswerKeyDialog extends JDialog {
         updateTable();
 
         setLocationRelativeTo(parent);
-        // Thêm vào cuối hàm public AnswerKeyDialog(...) { ... }
         service.WindowPersistenceManager.restoreWindow(this, "AnswerKeyDialog", 800, 750);
         service.WindowPersistenceManager.attachSaver(this, "AnswerKeyDialog");
     }
@@ -277,7 +272,7 @@ public class AnswerKeyDialog extends JDialog {
     }
 
     public ExamConfig getExamConfig() {
-        saveUIToCache(); // Chốt lần cuối trước khi save
+        saveUIToCache();
 
         int actualP1 = Integer.parseInt(txtP1.getText().trim());
         int actualP2 = Integer.parseInt(txtP2.getText().trim());
@@ -324,7 +319,6 @@ public class AnswerKeyDialog extends JDialog {
 
         uiCache.clear();
 
-        // [FIX 2]: KHÓA SỰ KIỆN LISTENER trong suốt quá trình tải dữ liệu!
         isUpdatingCombo = true;
         cbxModel.removeAllElements();
 
@@ -334,7 +328,6 @@ public class AnswerKeyDialog extends JDialog {
 
             Map<String, String> answers = new HashMap<>();
 
-            // Đọc dữ liệu an toàn, chặn giá trị null
             for(int i=1; i<=config.getNumPart1(); i++) {
                 String ans = config.getAnswer("P1_Câu_"+i);
                 if (ans != null) answers.put("P1_Câu_"+i, ans);
@@ -353,7 +346,6 @@ public class AnswerKeyDialog extends JDialog {
             uiCache.put(code, answers);
         }
 
-        // BẮT ĐẦU LOAD LÊN GIAO DIỆN MÀ KHÔNG BỊ XÓA TRẮNG DỮ LIỆU
         if (cbxModel.getSize() > 0) {
             currentCode = cbxModel.getElementAt(0);
             cbxExamCodes.setSelectedIndex(0);
@@ -365,13 +357,12 @@ public class AnswerKeyDialog extends JDialog {
             loadUIFromCache();
         }
 
-        // MỞ LẠI LISTENER SAU KHI ĐÃ LOAD AN TOÀN
         isUpdatingCombo = false;
     }
 
     private void processExcelFile(File file) {
-        try (FileInputStream fis = new FileInputStream(file);
-             XSSFWorkbook workbook = new XSSFWorkbook(fis)) {
+        // [FIX]: Dùng WorkbookFactory để đọc được mọi loại file Excel (.xls và .xlsx)
+        try (Workbook workbook = WorkbookFactory.create(file)) {
 
             Sheet sheet = workbook.getSheetAt(0);
             tableModel.setRowCount(0);
@@ -407,9 +398,15 @@ public class AnswerKeyDialog extends JDialog {
             }
             calculateTotalPossibleScore();
             JOptionPane.showMessageDialog(this, "Đã tự động điền đáp án cho mã đề [" + currentCode + "] từ file Excel!");
+
         } catch (Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this, "Lỗi khi đọc file Excel: " + e.getMessage(), "Lỗi", JOptionPane.ERROR_MESSAGE);
+            // [FIX BẮT LỖI]: Báo rõ cho giáo viên nếu file là CSV bị đổi đuôi
+            if (e.getMessage() != null && e.getMessage().contains("neither an OLE2 stream, nor an OOXML stream")) {
+                JOptionPane.showMessageDialog(this, "Lỗi: File Excel giả mạo (thực chất là CSV/Văn bản đổi đuôi).\n\nCÁCH KHẮC PHỤC:\n1. Mở file này bằng phần mềm Excel.\n2. Chọn File -> Save As.\n3. Lưu lại với định dạng Excel Workbook (*.xlsx) rồi thử lại.", "Sai định dạng file", JOptionPane.ERROR_MESSAGE);
+            } else {
+                JOptionPane.showMessageDialog(this, "Lỗi khi đọc file Excel: " + e.getMessage(), "Lỗi", JOptionPane.ERROR_MESSAGE);
+            }
         }
     }
 
