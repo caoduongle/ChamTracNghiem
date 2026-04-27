@@ -15,7 +15,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class UpdateService {
-    public static final String CURRENT_VERSION = "1.6.0"; // NHỚ ĐỔI SỐ NÀY TRƯỚC KHI XUẤT FILE MỚI
+    public static final String CURRENT_VERSION = "1.6.1"; // NHỚ ĐỔI SỐ NÀY TRƯỚC KHI XUẤT FILE MỚI
     private static final String VERSION_URL = "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/version.txt";
     private static final String DOWNLOAD_BASE_URL = "https://github.com/caoduongle/ChamTracNghiem/releases/download/v";
 
