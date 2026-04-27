@@ -1,181 +1,162 @@
 package service;
 
-import model.ExamConfig;
-import model.ExamSession;
-import model.ClassRoom;
+import model.*;
 import model.OMRModels.ExamReport;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.io.*;
+import java.util.*;
 
 public class ExcelService {
 
-    // 1. XUẤT BẢNG ĐIỂM RIÊNG CỦA 1 ĐỀ (Dùng trong lúc chấm bài)
-    public static void exportExamScoreTable(ClassRoom classRoom, ExamSession session, String filePath) throws IOException {
-        Workbook workbook = new XSSFWorkbook();
-        Sheet sheet = workbook.createSheet("Điểm " + session.getExamName());
-
-        Row headerRow = sheet.createRow(0);
-        String[] columns = {"STT", "Họ Tên", "Điểm Đạt Được"};
-
-        CellStyle headerStyle = workbook.createCellStyle();
+    // [CLEAN CODE]: Hàm tạo Style dùng chung để tiết kiệm RAM, tránh lỗi "Too many styles"
+    private static CellStyle createHeaderStyle(Workbook workbook) {
+        CellStyle style = workbook.createCellStyle();
         Font font = workbook.createFont();
         font.setBold(true);
-        headerStyle.setFont(font);
-
-        for (int i = 0; i < columns.length; i++) {
-            Cell cell = headerRow.createCell(i);
-            cell.setCellValue(columns[i]);
-            cell.setCellStyle(headerStyle);
-        }
-
-        // Tạo map report để tra cứu nhanh điểm theo STT
-        Map<String, Double> scoreMap = new HashMap<>();
-        if (session.getReports() != null) {
-            for (ExamReport r : session.getReports()) {
-                scoreMap.put(r.studentId, r.totalScore); // studentId lúc này là STT
-            }
-        }
-
-        int rowIdx = 1;
-        for (ClassRoom.Student student : classRoom.students) {
-            Row row = sheet.createRow(rowIdx++);
-            row.createCell(0).setCellValue(student.stt);
-            row.createCell(1).setCellValue(student.name);
-
-            String sttStr = String.valueOf(student.stt);
-            if (scoreMap.containsKey(sttStr)) {
-                row.createCell(2).setCellValue(scoreMap.get(sttStr));
-            } else {
-                row.createCell(2).setCellValue("Chưa chấm");
-            }
-        }
-
-        for (int i = 0; i < columns.length; i++) sheet.autoSizeColumn(i);
-
-        try (FileOutputStream fileOut = new FileOutputStream(filePath)) {
-            workbook.write(fileOut);
-        }
-        workbook.close();
+        style.setFont(font);
+        style.setAlignment(HorizontalAlignment.CENTER);
+        style.setVerticalAlignment(VerticalAlignment.CENTER);
+        style.setBorderBottom(BorderStyle.THIN);
+        return style;
     }
 
-    // 2. XUẤT BẢNG ĐIỂM TỔNG CỦA TOÀN LỚP (Dùng trong Quản lý lớp)
+    // 1. XUẤT BẢNG ĐIỂM RIÊNG CỦA 1 ĐỀ
+    public static void exportExamScoreTable(ClassRoom classRoom, ExamSession session, String filePath) throws IOException {
+        try (Workbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("Điểm " + session.getExamName());
+            CellStyle headerStyle = createHeaderStyle(workbook);
+
+            Row headerRow = sheet.createRow(0);
+            String[] cols = {"STT", "Họ Tên", "Mã Đề", "Điểm"};
+            for (int i = 0; i < cols.length; i++) {
+                Cell cell = headerRow.createCell(i);
+                cell.setCellValue(cols[i]);
+                cell.setCellStyle(headerStyle);
+            }
+
+            Map<String, ExamReport> reportMap = new HashMap<>();
+            for (ExamReport r : session.getReports()) reportMap.put(r.studentId, r);
+
+            int rowIdx = 1;
+            for (ClassRoom.Student student : classRoom.students) {
+                Row row = sheet.createRow(rowIdx++);
+                row.createCell(0).setCellValue(student.stt);
+                row.createCell(1).setCellValue(student.name);
+
+                ExamReport r = reportMap.get(String.valueOf(student.stt));
+                if (r != null) {
+                    row.createCell(2).setCellValue(r.examCode);
+                    row.createCell(3).setCellValue(r.totalScore);
+                } else {
+                    row.createCell(3).setCellValue("Vắng/Chưa chấm");
+                }
+            }
+
+            for (int i = 0; i < cols.length; i++) sheet.autoSizeColumn(i);
+            try (FileOutputStream out = new FileOutputStream(filePath)) { workbook.write(out); }
+        }
+    }
+
+    // 2. [FIX]: KHÔI PHỤC HÀM XUẤT BẢNG ĐIỂM TỔNG CỦA TOÀN LỚP (Dùng trong Quản lý lớp)
     public static void exportClassScoreTable(ClassRoom classRoom, String filePath) throws IOException {
-        Workbook workbook = new XSSFWorkbook();
-        Sheet sheet = workbook.createSheet("Tổng kết " + classRoom.className);
+        try (Workbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("Tổng kết " + classRoom.className);
+            CellStyle headerStyle = createHeaderStyle(workbook);
+            List<String> examNames = DataManager.listSavedExams(classRoom.className);
 
-        // Lấy danh sách tất cả các đề của lớp này
-        List<String> examNames = DataManager.listSavedExams(classRoom.className);
+            Row headerRow = sheet.createRow(0);
+            headerRow.createCell(0).setCellValue("STT");
+            headerRow.getCell(0).setCellStyle(headerStyle);
+            headerRow.createCell(1).setCellValue("Họ Tên");
+            headerRow.getCell(1).setCellStyle(headerStyle);
 
-        Row headerRow = sheet.createRow(0);
-        CellStyle headerStyle = workbook.createCellStyle();
-        Font font = workbook.createFont();
-        font.setBold(true);
-        headerStyle.setFont(font);
-
-        // Tạo Header cơ bản
-        headerRow.createCell(0).setCellValue("STT");
-        headerRow.getCell(0).setCellStyle(headerStyle);
-        headerRow.createCell(1).setCellValue("Họ Tên");
-        headerRow.getCell(1).setCellStyle(headerStyle);
-
-        // Thêm tên các đề thi làm Header các cột tiếp theo
-        int colIdx = 2;
-        for (String examName : examNames) {
-            Cell cell = headerRow.createCell(colIdx++);
-            cell.setCellValue(examName);
-            cell.setCellStyle(headerStyle);
-        }
-
-        // Load tất cả các session (đề thi) vào bộ nhớ
-        Map<String, ExamSession> sessions = new HashMap<>();
-        for (String examName : examNames) {
-            sessions.put(examName, DataManager.loadSession(examName, classRoom.className));
-        }
-
-        int rowIdx = 1;
-        for (ClassRoom.Student student : classRoom.students) {
-            Row row = sheet.createRow(rowIdx++);
-            row.createCell(0).setCellValue(student.stt);
-            row.createCell(1).setCellValue(student.name);
-
-            String sttStr = String.valueOf(student.stt);
-            int scoreColIdx = 2;
-
-            // Duyệt qua từng đề, tra cứu xem học sinh này được mấy điểm
+            int colIdx = 2;
             for (String examName : examNames) {
-                ExamSession session = sessions.get(examName);
-                boolean found = false;
-                if (session != null && session.getReports() != null) {
-                    for (ExamReport r : session.getReports()) {
-                        if (r.studentId.equals(sttStr)) {
-                            row.createCell(scoreColIdx).setCellValue(r.totalScore);
-                            found = true;
-                            break;
+                Cell cell = headerRow.createCell(colIdx++);
+                cell.setCellValue(examName);
+                cell.setCellStyle(headerStyle);
+            }
+
+            Map<String, ExamSession> sessions = new HashMap<>();
+            for (String examName : examNames) {
+                sessions.put(examName, DataManager.loadSession(examName, classRoom.className));
+            }
+
+            int rowIdx = 1;
+            for (ClassRoom.Student student : classRoom.students) {
+                Row row = sheet.createRow(rowIdx++);
+                row.createCell(0).setCellValue(student.stt);
+                row.createCell(1).setCellValue(student.name);
+
+                String sttStr = String.valueOf(student.stt);
+                int scoreColIdx = 2;
+
+                for (String examName : examNames) {
+                    ExamSession session = sessions.get(examName);
+                    boolean found = false;
+                    if (session != null && session.getReports() != null) {
+                        for (ExamReport r : session.getReports()) {
+                            if (r.studentId.equals(sttStr)) {
+                                row.createCell(scoreColIdx).setCellValue(r.totalScore);
+                                found = true;
+                                break;
+                            }
                         }
                     }
+                    if (!found) row.createCell(scoreColIdx).setCellValue("-");
+                    scoreColIdx++;
                 }
-                if (!found) {
-                    row.createCell(scoreColIdx).setCellValue("-"); // Nếu chưa làm bài
-                }
-                scoreColIdx++;
             }
-        }
 
-        for (int i = 0; i < colIdx; i++) sheet.autoSizeColumn(i);
-
-        try (FileOutputStream fileOut = new FileOutputStream(filePath)) {
-            workbook.write(fileOut);
+            for (int i = 0; i < colIdx; i++) sheet.autoSizeColumn(i);
+            try (FileOutputStream fileOut = new FileOutputStream(filePath)) { workbook.write(fileOut); }
         }
-        workbook.close();
     }
 
-    // 3. XUẤT ĐÁP ÁN (ĐÃ UPDATE ĐỂ XUẤT ĐẸP VÀ CHUẨN TÊN)
+    // 3. XUẤT ĐÁP ÁN (CẤU TRÚC 3 CỘT)
     public static void exportAnswerKey(ExamConfig config, String filePath) throws IOException {
-        Workbook workbook = new XSSFWorkbook();
+        if (config == null) return;
+        try (Workbook workbook = new XSSFWorkbook()) {
+            String activeCode = config.getActiveCode();
+            Sheet sheet = workbook.createSheet("Đáp án mã " + activeCode);
+            CellStyle headerStyle = createHeaderStyle(workbook);
 
-        // Lấy tên file để gán luôn làm tên Sheet trong Excel (cho đồng bộ và đẹp)
-        String fileName = new File(filePath).getName().replace(".xlsx", "");
-        Sheet sheet = workbook.createSheet("Đáp án " + fileName);
-
-        Row headerRow = sheet.createRow(0);
-
-        CellStyle headerStyle = workbook.createCellStyle();
-        Font font = workbook.createFont();
-        font.setBold(true);
-        headerStyle.setFont(font);
-
-        Cell c0 = headerRow.createCell(0); c0.setCellValue("Câu hỏi"); c0.setCellStyle(headerStyle);
-        Cell c1 = headerRow.createCell(1); c1.setCellValue("Đáp án chuẩn"); c1.setCellStyle(headerStyle);
-
-        int rowIdx = 1;
-        Map<String, String> answers = config.getAnswers();
-        if (answers != null) {
-            // Sắp xếp các câu hỏi cho gọn gàng đẹp mắt theo thứ tự chữ cái/số
-            List<String> sortedKeys = new ArrayList<>(answers.keySet());
-            Collections.sort(sortedKeys);
-
-            for (String key : sortedKeys) {
-                Row row = sheet.createRow(rowIdx++);
-                row.createCell(0).setCellValue(key);
-                row.createCell(1).setCellValue(answers.get(key));
+            Row headerRow = sheet.createRow(0);
+            String[] headers = {"STT", "Phần", "Đáp án đúng (" + activeCode + ")"};
+            for (int i = 0; i < headers.length; i++) {
+                Cell c = headerRow.createCell(i);
+                c.setCellValue(headers[i]);
+                c.setCellStyle(headerStyle);
             }
-        }
 
-        sheet.autoSizeColumn(0);
-        sheet.autoSizeColumn(1);
+            int rowIdx = 1;
+            for (int i = 1; i <= config.getNumPart1(); i++) {
+                Row r = sheet.createRow(rowIdx++);
+                r.createCell(0).setCellValue(i);
+                r.createCell(1).setCellValue("I");
+                r.createCell(2).setCellValue(val(config.getAnswer("P1_Câu_" + i)));
+            }
+            for (int i = 1; i <= config.getNumPart2(); i++) {
+                Row r = sheet.createRow(rowIdx++);
+                r.createCell(0).setCellValue(i);
+                r.createCell(1).setCellValue("II");
+                String fullAns = String.format("%s%s%s%s",
+                        val(config.getAnswer("P2_Câu_"+i+"_a")), val(config.getAnswer("P2_Câu_"+i+"_b")),
+                        val(config.getAnswer("P2_Câu_"+i+"_c")), val(config.getAnswer("P2_Câu_"+i+"_d")));
+                r.createCell(2).setCellValue(fullAns);
+            }
+            for (int i = 1; i <= config.getNumPart3(); i++) {
+                Row r = sheet.createRow(rowIdx++);
+                r.createCell(0).setCellValue(i);
+                r.createCell(1).setCellValue("III");
+                r.createCell(2).setCellValue(val(config.getAnswer("P3_Câu_" + i)));
+            }
 
-        try (FileOutputStream fileOut = new FileOutputStream(filePath)) {
-            workbook.write(fileOut);
+            for (int i = 0; i < 3; i++) sheet.autoSizeColumn(i);
+            try (FileOutputStream out = new FileOutputStream(filePath)) { workbook.write(out); }
         }
-        workbook.close();
     }
+
+    private static String val(String s) { return s == null ? "" : s; }
 }

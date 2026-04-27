@@ -2,9 +2,16 @@ package view;
 
 import model.ClassRoom;
 import service.DataManager;
+import service.ExcelService;
+import service.WindowPersistenceManager;
+
+import org.apache.poi.ss.usermodel.*;
+
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.awt.Color;
+import java.awt.Font;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
@@ -34,7 +41,6 @@ public class ClassManagementDialog extends JDialog {
         tblClasses = new JTable(model);
         tblClasses.setRowHeight(30);
         tblClasses.setFont(new Font("Arial", Font.PLAIN, 14));
-        // Đổi con trỏ chuột thành hình bàn tay khi di chuột qua bảng để giống File Explorer
         tblClasses.setCursor(new Cursor(Cursor.HAND_CURSOR));
 
         JPanel pnlList = new JPanel(new BorderLayout());
@@ -63,9 +69,6 @@ public class ClassManagementDialog extends JDialog {
 
         add(pnlBtns, BorderLayout.SOUTH);
 
-        // ====================================================================
-        // [UX NÂNG CẤP]: MENU CHUỘT PHẢI (CONTEXT MENU) GIỐNG FILE EXPLORER
-        // ====================================================================
         JPopupMenu popupMenu = new JPopupMenu();
         JMenuItem itemOpen = new JMenuItem("✔ Mở lớp này");
         JMenuItem itemRename = new JMenuItem("📝 Đổi tên lớp");
@@ -73,57 +76,46 @@ public class ClassManagementDialog extends JDialog {
         JMenuItem itemDashboard = new JMenuItem("📈 Thống kê lớp");
         JMenuItem itemDel = new JMenuItem("❌ Xóa lớp");
 
-        // Cấu hình UI cho Menu
-        itemOpen.setFont(new Font("Arial", Font.BOLD, 13)); // Nút mở in đậm
-        itemDel.setForeground(Color.RED); // Nút xóa màu đỏ
+        itemOpen.setFont(new Font("Arial", Font.BOLD, 13));
+        itemDel.setForeground(Color.RED);
 
         popupMenu.add(itemOpen);
-        popupMenu.addSeparator(); // Dòng kẻ ngang phân cách
+        popupMenu.addSeparator();
         popupMenu.add(itemRename);
         popupMenu.add(itemEdit);
         popupMenu.add(itemDashboard);
         popupMenu.addSeparator();
         popupMenu.add(itemDel);
 
-        // Nối sự kiện từ Menu vào các Nút bấm trên giao diện (Tái sử dụng code)
         itemOpen.addActionListener(e -> btnOpen.doClick());
         itemRename.addActionListener(e -> btnRename.doClick());
         itemEdit.addActionListener(e -> btnEdit.doClick());
         itemDashboard.addActionListener(e -> btnClassDashboard.doClick());
         itemDel.addActionListener(e -> btnDel.doClick());
 
-        // Gắn bộ lắng nghe sự kiện chuột vào Bảng
         tblClasses.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
-                // Xử lý Click ĐÚP chuột trái -> Mở lớp
                 if (SwingUtilities.isLeftMouseButton(e) && e.getClickCount() == 2) {
                     int row = tblClasses.rowAtPoint(e.getPoint());
-                    if (row != -1) {
-                        btnOpen.doClick();
-                    }
+                    if (row != -1) btnOpen.doClick();
                 }
             }
 
             @Override
             public void mouseReleased(MouseEvent e) {
-                // Xử lý Click CHUỘT PHẢI -> Hiện Menu
                 if (SwingUtilities.isRightMouseButton(e) || e.isPopupTrigger()) {
                     int row = tblClasses.rowAtPoint(e.getPoint());
                     if (row != -1) {
-                        // Tự động bôi đen dòng mà chuột phải click vào
                         tblClasses.setRowSelectionInterval(row, row);
-                        // Hiển thị Popup Menu tại tọa độ chuột
                         popupMenu.show(e.getComponent(), e.getX(), e.getY());
                     }
                 }
             }
         });
-        // ====================================================================
 
         loadClasses();
 
-        // CÁC SỰ KIỆN NÚT BẤM BÊN DƯỚI GIỮ NGUYÊN
         btnNew.addActionListener(e -> {
             String name = JOptionPane.showInputDialog(this, "Nhập tên lớp mới (VD: 10A1):");
             if (name == null || name.trim().isEmpty()) return;
@@ -205,8 +197,8 @@ public class ClassManagementDialog extends JDialog {
         });
 
         setLocationRelativeTo(parent);
-        service.WindowPersistenceManager.restoreWindow(this, "ClassManagementDialog", 550, 500);
-        service.WindowPersistenceManager.attachSaver(this, "ClassManagementDialog");
+        WindowPersistenceManager.restoreWindow(this, "ClassManagementDialog", 550, 500);
+        WindowPersistenceManager.attachSaver(this, "ClassManagementDialog");
     }
 
     private void loadClasses() {
@@ -274,14 +266,12 @@ class ClassEditorDialog extends JDialog {
 
         btnImportExcel.addActionListener(e -> {
             JFileChooser chooser = new JFileChooser();
-
-            // --- BỘ NHỚ LƯU THƯ MỤC EXCEL DANH SÁCH LỚP ---
             Preferences prefs = Preferences.userRoot().node("ChamTracNghiem_N7");
             String lastDir = prefs.get("DIR_CLASS_EXCEL", System.getProperty("user.home"));
             chooser.setCurrentDirectory(new File(lastDir));
 
             if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-                prefs.put("DIR_CLASS_EXCEL", chooser.getSelectedFile().getParent()); // Cập nhật lại vị trí mới
+                prefs.put("DIR_CLASS_EXCEL", chooser.getSelectedFile().getParent());
                 processExcelFile(chooser.getSelectedFile());
             }
         });
@@ -292,7 +282,7 @@ class ClassEditorDialog extends JDialog {
                 int current = m.getRowCount();
                 if(newSize > current) for(int i = current; i < newSize; i++) m.addRow(new Object[]{i + 1, ""});
                 else m.setRowCount(newSize);
-            } catch(Exception ex) { JOptionPane.showMessageDialog(this, "Nhập số nguyên!"); }
+            } catch(Exception ex) { JOptionPane.showMessageDialog(this, "Nhập số nguyên hợp lệ!"); }
         });
 
         JPanel pnlBottom = new JPanel(new GridLayout(2, 1));
@@ -315,18 +305,15 @@ class ClassEditorDialog extends JDialog {
 
         btnExport.addActionListener(ev -> {
             JFileChooser fc = new JFileChooser();
-
-            // Dùng chung Key lưu trữ xuất file để tạo sự đồng bộ
             Preferences prefs = Preferences.userRoot().node("ChamTracNghiem_N7");
             String lastDir = prefs.get("DIR_EXPORT", System.getProperty("user.home"));
             fc.setCurrentDirectory(new File(lastDir));
             fc.setSelectedFile(new File("DiemTong_" + cr.className + ".xlsx"));
 
             if (fc.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
-                prefs.put("DIR_EXPORT", fc.getSelectedFile().getParent()); // Nhớ vị trí xuất file
-
+                prefs.put("DIR_EXPORT", fc.getSelectedFile().getParent());
                 try {
-                    service.ExcelService.exportClassScoreTable(cr, fc.getSelectedFile().getAbsolutePath());
+                    ExcelService.exportClassScoreTable(cr, fc.getSelectedFile().getAbsolutePath());
                     JOptionPane.showMessageDialog(this, "Thành công!");
                 } catch (Exception ex) { JOptionPane.showMessageDialog(this, "Lỗi: " + ex.getMessage()); }
             }
@@ -336,24 +323,23 @@ class ClassEditorDialog extends JDialog {
         add(pnlBottom, BorderLayout.SOUTH);
 
         setLocationRelativeTo(getParent());
-
-        // Nhớ vị trí cho màn hình ClassEditor
-        service.WindowPersistenceManager.restoreWindow(this, "ClassEditorDialog", 550, 650);
-        service.WindowPersistenceManager.attachSaver(this, "ClassEditorDialog");
+        WindowPersistenceManager.restoreWindow(this, "ClassEditorDialog", 550, 650);
+        WindowPersistenceManager.attachSaver(this, "ClassEditorDialog");
     }
 
+    // [CLEAN CODE]: Dùng các class ngắn gọn nhờ việc gộp Import ở đầu file
     private void processExcelFile(File file) {
-        try (org.apache.poi.ss.usermodel.Workbook workbook = org.apache.poi.ss.usermodel.WorkbookFactory.create(file)) {
+        try (Workbook workbook = WorkbookFactory.create(file)) {
 
-            org.apache.poi.ss.usermodel.Sheet sheet = workbook.getSheetAt(0);
-            org.apache.poi.ss.usermodel.DataFormatter df = new org.apache.poi.ss.usermodel.DataFormatter();
+            Sheet sheet = workbook.getSheetAt(0);
+            DataFormatter df = new DataFormatter();
             m.setRowCount(0);
 
             int count = 0;
-            for (org.apache.poi.ss.usermodel.Row row : sheet) {
+            for (Row row : sheet) {
                 if (row == null) continue;
 
-                org.apache.poi.ss.usermodel.Cell sttCell = row.getCell(0);
+                Cell sttCell = row.getCell(0);
                 if (sttCell == null) continue;
 
                 String sttStr = df.formatCellValue(sttCell).trim();
@@ -362,8 +348,8 @@ class ClassEditorDialog extends JDialog {
                 try {
                     int stt = (int) Double.parseDouble(sttStr);
 
-                    org.apache.poi.ss.usermodel.Cell hoDemCell = row.getCell(2);
-                    org.apache.poi.ss.usermodel.Cell tenCell = row.getCell(3);
+                    Cell hoDemCell = row.getCell(2);
+                    Cell tenCell = row.getCell(3);
 
                     String hoDem = hoDemCell != null ? df.formatCellValue(hoDemCell).trim() : "";
                     String ten = tenCell != null ? df.formatCellValue(tenCell).trim() : "";
@@ -380,7 +366,6 @@ class ClassEditorDialog extends JDialog {
 
         } catch (Exception ex) {
             ex.printStackTrace();
-            // [FIX BẮT LỖI]: Báo rõ cho giáo viên nếu file là CSV bị đổi đuôi
             if (ex.getMessage() != null && ex.getMessage().contains("neither an OLE2 stream, nor an OOXML stream")) {
                 JOptionPane.showMessageDialog(this, "Lỗi: File Excel giả mạo (thực chất là CSV/Văn bản đổi đuôi).\n\nCÁCH KHẮC PHỤC:\n1. Mở file này bằng phần mềm Excel.\n2. Chọn File -> Save As.\n3. Lưu lại với định dạng Excel Workbook (*.xlsx) rồi import lại.", "Sai định dạng file", JOptionPane.ERROR_MESSAGE);
             } else {
@@ -389,6 +374,7 @@ class ClassEditorDialog extends JDialog {
         }
     }
 
+    @SuppressWarnings("unchecked") // Tắt cảnh báo ép kiểu mảng File khi kéo thả
     private void enableDragAndDrop() {
         this.setDropTarget(new DropTarget() {
             public synchronized void drop(DropTargetDropEvent evt) {
