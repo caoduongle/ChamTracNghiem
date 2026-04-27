@@ -5,6 +5,7 @@ import model.ExamConfig;
 import model.ExamSession;
 import view.MainView;
 import service.OMRService;
+import util.FileUtil;
 
 import javax.swing.*;
 import java.awt.Toolkit;
@@ -56,182 +57,21 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
 
     @Override
     protected Void doInBackground() throws Exception {
-        view.getBtnBackToMenu().setEnabled(false);
-        view.getBtnStartGrading().setEnabled(false);
-        view.getBtnSetAnswerKey().setEnabled(false);
-        view.getBtnStopGrading().setEnabled(true);
+        toggleUIComponents(false);
+        publish(new Object[]{"INIT_PROGRESS"});
 
         int totalFiles = assignedFiles.size();
         AtomicInteger currentCount = new AtomicInteger(0);
-
         boolean useMultiThread = service.DataManager.isMultiThreadEnabled();
         boolean autoClean = service.DataManager.isAutoCleanProcessed();
 
-        publish(new Object[]{"INIT_PROGRESS"});
-
-        int coreCount = Runtime.getRuntime().availableProcessors();
-        long maxMemoryMB = Runtime.getRuntime().maxMemory() / (1024 * 1024);
-
-        int safeThreads = 1;
-        if (useMultiThread) {
-            if (maxMemoryMB < 1500) {
-                safeThreads = Math.min(2, coreCount);
-            } else if (maxMemoryMB < 3000) {
-                safeThreads = Math.min(4, coreCount);
-            } else {
-                safeThreads = coreCount;
-            }
-        }
-        safeThreads = Math.max(1, safeThreads);
-        ExecutorService executor = Executors.newFixedThreadPool(safeThreads);
-
+        ExecutorService executor = Executors.newFixedThreadPool(calculateSafeThreadCount(useMultiThread));
         List<Callable<Void>> tasks = new ArrayList<>();
 
         for (Map.Entry<String, File> entry : assignedFiles.entrySet()) {
             tasks.add(() -> {
                 if (isCancelled()) return null;
-
-                String stt = entry.getKey();
-                File file = entry.getValue();
-
-                try {
-                    ExamConfig threadConfig = useMultiThread ? deepCloneConfig(currentConfig) : currentConfig;
-
-                    String selectedCode = studentExamCodes.getOrDefault(stt, "Mặc định");
-                    threadConfig.setActiveCode(selectedCode);
-
-                    Map<String, String> studentResults = OMRService.processExam(file.getAbsolutePath(), threadConfig);
-
-                    if (studentResults != null) {
-                        String fName = "Chưa có tên";
-                        for (model.ClassRoom.Student st : currentClassRoom.students) {
-                            if (String.valueOf(st.stt).equals(stt)) { fName = st.name; break; }
-                        }
-
-                        boolean hasError = false;
-                        boolean hasWarning = false;
-                        List<String> errorList = new ArrayList<>();
-
-                        for (Map.Entry<String, String> entryResult : studentResults.entrySet()) {
-                            String val = entryResult.getValue();
-                            String qName = entryResult.getKey()
-                                    .replace("P1_", "Phần 1 - ")
-                                    .replace("P2_", "Phần 2 - ")
-                                    .replace("P3_", "Phần 3 - ")
-                                    .replace("_", " ");
-
-                            if (val.startsWith("ERR_")) {
-                                hasError = true;
-                                errorList.add(qName + " (Tô đúp)");
-                                studentResults.put(entryResult.getKey(), "?");
-                            } else if (val.startsWith("WARN_FMT_")) {
-                                hasWarning = true;
-                                errorList.add(qName + " (Lỗi Format)");
-                                studentResults.put(entryResult.getKey(), val.substring(9));
-                            } else if (val.startsWith("WARN_")) {
-                                hasWarning = true;
-                                errorList.add(qName + " (Tô mờ)");
-                                studentResults.put(entryResult.getKey(), val.substring(5));
-                            }
-                        }
-
-                        model.OMRModels.ExamReport newReport = service.ScoringEngine.gradeExam(
-                                stt, "AUTO", studentResults, threadConfig
-                        );
-
-                        boolean hasWrongAnswers = false;
-                        for (model.OMRModels.AnswerRecord detail : newReport.details) {
-                            if (!detail.isCorrect) {
-                                hasWrongAnswers = true;
-                                break;
-                            }
-                        }
-
-                        newReport.originalImagePath = file.getAbsolutePath();
-                        newReport.studentName = fName;
-                        newReport.studentSttFile = stt;
-                        newReport.studentClass = currentClassRoom.className;
-                        newReport.examCode = selectedCode;
-
-                        String baseStatus = "";
-                        if (hasError) {
-                            baseStatus = "<html><span style=\"font-family: 'Segoe UI Emoji'\">❌</span> Lỗi: " + String.join(", ", errorList) + "</html>";
-                        }
-                        else if (hasWarning) {
-                            baseStatus = "<html><span style=\"font-family: 'Segoe UI Emoji'\">⚠️</span> Nhắc: " + String.join(", ", errorList) + "</html>";
-                        }
-                        else {
-                            baseStatus = "<html><span style=\"font-family: 'Segoe UI Emoji'\">✅</span> Thành công</html>";
-                        }
-
-                        newReport.statusMessage = baseStatus;
-
-                        // =========================================================
-                        // [BẢN VÁ AN TOÀN]: LOGIC COPY & XÓA FILE CHỐNG MẤT DỮ LIỆU
-                        // =========================================================
-                        try {
-                            File imageDir = new File("data/classes/" + currentClassRoom.className + "/images/" + currentSession.getExamName());
-                            if (!imageDir.exists()) imageDir.mkdirs();
-
-                            String originalExt = ".jpg";
-                            int extIndex = file.getName().lastIndexOf('.');
-                            if (extIndex > 0) {
-                                originalExt = file.getName().substring(extIndex);
-                            }
-
-                            File destFile = new File(imageDir, stt + originalExt);
-                            File originalProcessed = new File(file.getAbsolutePath().replace(originalExt, "_processed" + originalExt));
-                            File destProcessed = new File(imageDir, stt + "_processed" + originalExt);
-
-                            // Kiểm tra xem file nguồn và file đích có bị trùng nhau không (Chấm lại bài cũ)
-                            boolean isSameSourceAndDest = file.getAbsolutePath().equals(destFile.getAbsolutePath());
-                            boolean isSameProcessed = originalProcessed.getAbsolutePath().equals(destProcessed.getAbsolutePath());
-
-                            if (!isSameSourceAndDest) {
-                                java.nio.file.Files.copy(file.toPath(), destFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                            }
-                            newReport.imagePath = destFile.getAbsolutePath();
-
-                            if (originalProcessed.exists()) {
-                                // Nếu bài làm đúng 100% không tì vết -> Xóa rác
-                                if (autoClean && !hasError && !hasWarning && !hasWrongAnswers) {
-                                    originalProcessed.delete(); // Xóa temp ở Desktop
-                                    if (!isSameProcessed && destProcessed.exists()) {
-                                        destProcessed.delete(); // Xóa luôn file trong data nếu có
-                                    }
-                                } else {
-                                    // Bắt buộc giữ lại file đối chiếu
-                                    if (!isSameProcessed) {
-                                        // Chỉ copy và xóa temp nếu kéo từ Desktop vào
-                                        java.nio.file.Files.copy(originalProcessed.toPath(), destProcessed.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                                        originalProcessed.delete();
-                                    }
-                                    // NẾU LÀ CÙNG 1 FILE (isSameProcessed = true): KHÔNG LÀM GÌ CẢ ĐỂ GIỮ NGUYÊN ẢNH!
-                                }
-                            }
-                        } catch (Exception ex) {
-                            newReport.imagePath = file.getAbsolutePath();
-                        }
-
-                        synchronized(reportDatabase) {
-                            reportDatabase.put(stt, newReport);
-                        }
-                        synchronized(currentSession) {
-                            currentSession.getReports().removeIf(r -> r.studentId.equals(stt));
-                            currentSession.addReport(newReport);
-                        }
-
-                        publish(new Object[]{"UPDATE", stt});
-                    }
-                } catch (Throwable t) {
-                    t.printStackTrace();
-                }
-
-                int completed = currentCount.incrementAndGet();
-                int percent = (completed * 100) / totalFiles;
-                String modeText = useMultiThread ? " (Đa luồng CPU)" : "";
-                publish(new Object[]{"STATUS", "Đang chấm" + modeText + ": " + completed + "/" + totalFiles + " bài...", percent});
-
+                processSingleExam(entry.getKey(), entry.getValue(), useMultiThread, autoClean, currentCount, totalFiles);
                 return null;
             });
         }
@@ -251,14 +91,137 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
         return null;
     }
 
+    // ===================================================================================
+    // CÁC HÀM HELPER ĐƯỢC TÁCH RA ĐỂ TUÂN THỦ CLEAN CODE (SRP & DRY)
+    // ===================================================================================
+
+    private void processSingleExam(String stt, File file, boolean useMultiThread, boolean autoClean, AtomicInteger currentCount, int totalFiles) {
+        try {
+            ExamConfig threadConfig = useMultiThread ? deepCloneConfig(currentConfig) : currentConfig;
+            String selectedCode = studentExamCodes.getOrDefault(stt, "Mặc định");
+            threadConfig.setActiveCode(selectedCode);
+
+            Map<String, String> studentResults = OMRService.processExam(file.getAbsolutePath(), threadConfig);
+
+            if (studentResults != null) {
+                // 1. Phân tích kết quả, lọc lỗi và cảnh báo
+                ValidationResult validation = validateStudentResults(studentResults);
+
+                // 2. Chấm điểm
+                model.OMRModels.ExamReport newReport = service.ScoringEngine.gradeExam(stt, "AUTO", studentResults, threadConfig);
+
+                // 3. Kiểm tra xem bài làm có bị sai câu nào không
+                boolean isPerfect = !validation.hasError && !validation.hasWarning && checkPerfectScore(newReport);
+
+                // 4. Gọi FileUtil để xử lý copy/xóa ảnh (Thay thế cho đoạn code dài ngoằng cũ)
+                String savedImagePath = FileUtil.handleGradedExamFiles(
+                        file, stt, currentClassRoom.className, currentSession.getExamName(), autoClean, isPerfect
+                );
+
+                // 5. Cập nhật thông tin báo cáo
+                newReport.originalImagePath = file.getAbsolutePath();
+                newReport.imagePath = savedImagePath;
+                newReport.studentName = getStudentName(stt);
+                newReport.studentSttFile = stt;
+                newReport.studentClass = currentClassRoom.className;
+                newReport.examCode = selectedCode;
+                newReport.statusMessage = generateStatusMessage(validation);
+
+                // 6. Lưu vào Database
+                synchronized(reportDatabase) { reportDatabase.put(stt, newReport); }
+                synchronized(currentSession) {
+                    currentSession.getReports().removeIf(r -> r.studentId.equals(stt));
+                    currentSession.addReport(newReport);
+                }
+
+                publish(new Object[]{"UPDATE", stt});
+            }
+        } catch (Throwable t) {
+            t.printStackTrace();
+        }
+
+        int completed = currentCount.incrementAndGet();
+        publish(new Object[]{"STATUS", "Đang chấm" + (useMultiThread ? " (Đa luồng)" : "") + ": " + completed + "/" + totalFiles + " bài...", (completed * 100) / totalFiles});
+    }
+
+    private ValidationResult validateStudentResults(Map<String, String> studentResults) {
+        ValidationResult res = new ValidationResult();
+        for (Map.Entry<String, String> entryResult : studentResults.entrySet()) {
+            String val = entryResult.getValue();
+            String qName = entryResult.getKey()
+                    .replace("P1_", "Phần 1 - ").replace("P2_", "Phần 2 - ").replace("P3_", "Phần 3 - ").replace("_", " ");
+
+            if (val.startsWith("ERR_")) {
+                res.hasError = true;
+                res.errorList.add(qName + " (Tô đúp)");
+                studentResults.put(entryResult.getKey(), "?");
+            } else if (val.startsWith("WARN_FMT_")) {
+                res.hasWarning = true;
+                res.errorList.add(qName + " (Lỗi Format)");
+                studentResults.put(entryResult.getKey(), val.substring(9));
+            } else if (val.startsWith("WARN_")) {
+                res.hasWarning = true;
+                res.errorList.add(qName + " (Tô mờ)");
+                studentResults.put(entryResult.getKey(), val.substring(5));
+            }
+        }
+        return res;
+    }
+
+    private boolean checkPerfectScore(model.OMRModels.ExamReport report) {
+        for (model.OMRModels.AnswerRecord detail : report.details) {
+            if (!detail.isCorrect) return false;
+        }
+        return true;
+    }
+
+    private String getStudentName(String stt) {
+        for (model.ClassRoom.Student st : currentClassRoom.students) {
+            if (String.valueOf(st.stt).equals(stt)) return st.name;
+        }
+        return "Chưa có tên";
+    }
+
+    private String generateStatusMessage(ValidationResult validation) {
+        if (validation.hasError) return "<html><span style=\"font-family: 'Segoe UI Emoji'\">❌</span> Lỗi: " + String.join(", ", validation.errorList) + "</html>";
+        if (validation.hasWarning) return "<html><span style=\"font-family: 'Segoe UI Emoji'\">⚠️</span> Nhắc: " + String.join(", ", validation.errorList) + "</html>";
+        return "<html><span style=\"font-family: 'Segoe UI Emoji'\">✅</span> Thành công</html>";
+    }
+
+    private int calculateSafeThreadCount(boolean useMultiThread) {
+        int coreCount = Runtime.getRuntime().availableProcessors();
+        if (!useMultiThread) return 1;
+        long maxMemoryMB = Runtime.getRuntime().maxMemory() / (1024 * 1024);
+        if (maxMemoryMB < 1500) return Math.min(2, coreCount);
+        if (maxMemoryMB < 3000) return Math.min(4, coreCount);
+        return coreCount;
+    }
+
+    private void toggleUIComponents(boolean isGradingFinished) {
+        view.getBtnBackToMenu().setEnabled(isGradingFinished);
+        view.getBtnStartGrading().setEnabled(isGradingFinished);
+        view.getBtnSetAnswerKey().setEnabled(isGradingFinished);
+        view.getBtnStopGrading().setEnabled(!isGradingFinished);
+        if (isGradingFinished) view.getProgressBar().setVisible(false);
+    }
+
+    // Class nội bộ lưu trữ kết quả phân tích lỗi
+    private static class ValidationResult {
+        boolean hasError = false;
+        boolean hasWarning = false;
+        List<String> errorList = new ArrayList<>();
+    }
+
+    // ===================================================================================
+    // UI UPDATES (SwingWorker Methods)
+    // ===================================================================================
+
     @Override
     protected void process(List<Object[]> chunks) {
         for (Object[] chunk : chunks) {
             if (chunk[0].equals("STATUS")) {
                 view.setStatusMessage((String) chunk[1]);
-                if (chunk.length > 2) {
-                    view.getProgressBar().setValue((int) chunk[2]);
-                }
+                if (chunk.length > 2) view.getProgressBar().setValue((int) chunk[2]);
             }
             else if (chunk[0].equals("INIT_PROGRESS")) {
                 view.getProgressBar().setVisible(true);
@@ -267,10 +230,7 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
             else if (chunk[0].equals("UPDATE")) {
                 String stt = (String) chunk[1];
                 assignedFiles.remove(stt);
-
-                if (onUpdateTableCallback != null) {
-                    onUpdateTableCallback.run();
-                }
+                if (onUpdateTableCallback != null) onUpdateTableCallback.run();
             }
         }
     }
@@ -278,18 +238,10 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
     @Override
     protected void done() {
         try { get(); } catch (Exception e) {}
-        view.getBtnBackToMenu().setEnabled(true);
-        view.getBtnStartGrading().setEnabled(true);
-        view.getBtnSetAnswerKey().setEnabled(true);
-        view.getBtnStopGrading().setEnabled(false);
 
-        view.getProgressBar().setVisible(false);
-
+        toggleUIComponents(true);
         assignedFiles.clear();
-
-        if (onUpdateTableCallback != null) {
-            onUpdateTableCallback.run();
-        }
+        if (onUpdateTableCallback != null) onUpdateTableCallback.run();
 
         if (isCancelled()) {
             view.setStatusMessage("Đã dừng chấm bài theo yêu cầu.");
@@ -302,9 +254,9 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
         if (!isCancelled() && service.DataManager.getAutoCleanupMode() == 2) {
             service.DataManager.performSilentDeepCleanup();
         }
-
         if (!isCancelled() && service.DataManager.isSoundEnabled()) {
             Toolkit.getDefaultToolkit().beep();
         }
     }
-}
+} // KẾT THÚC CLASS TẠI ĐÂY, KHÔNG ĐỂ MÃ NÀO LỌT RA NGOÀI DẤU NGOẶC NÀY NỮA
+

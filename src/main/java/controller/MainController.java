@@ -120,6 +120,27 @@ public class MainController {
             tableManager.updateExamCodeEditor(currentConfig.getExamCodes());
         }
         refreshTable();
+        // Bật Server lắng nghe ở cổng 8080
+        service.LocalServer.startServer(8080, (incomingClass, incomingExam, stt, templateId, imagePath) -> {
+            javax.swing.SwingUtilities.invokeLater(() -> {
+                // [CẢI TIẾN]: Chỉ chấp nhận ảnh nếu đúng Lớp và đúng Đề đang mở
+                if (currentClassRoom != null && currentSession != null
+                        && currentClassRoom.className.equals(incomingClass)
+                        && currentSession.getExamName().equals(incomingExam)) {
+
+                    assignedFiles.put(stt, new java.io.File(imagePath));
+                    refreshTable();
+                    view.setStatusMessage("📱 Vừa nhận ảnh từ điện thoại cho STT: " + stt + " (Mẫu: " + templateId + ")");
+                } else {
+                    // Cảnh báo nếu điện thoại gửi nhầm lớp
+                    System.out.println("⚠️ Bỏ qua ảnh: App gửi lớp '" + incomingClass + "' nhưng PC đang mở '" + (currentClassRoom != null ? currentClassRoom.className : "null") + "'");
+                }
+            });
+        });
+
+        // Cập nhật tiêu đề cửa sổ để hiển thị IP cho bạn biết đường kết nối
+        String myIP = service.LocalServer.getLocalIP();
+        view.setTitle("Phần mềm Chấm Thi | Lớp: " + currentClassRoom.className + " | Đề: " + currentSession.getExamName() + " | 📡 IP: " + myIP + ":8080");
     }
 
     private void refreshTable() {
@@ -159,6 +180,7 @@ public class MainController {
                 this.currentSession = null;
                 this.reportDatabase.clear();
                 this.assignedFiles.clear();
+                service.LocalServer.stopServer();
                 showStartupMenu(false);
             }
         });

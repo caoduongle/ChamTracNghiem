@@ -1,6 +1,7 @@
 package service;
 
 import model.ExamConfig;
+import model.OMRTemplate;
 import nu.pattern.OpenCV;
 import org.opencv.core.*;
 import org.opencv.imgcodecs.Imgcodecs;
@@ -16,36 +17,67 @@ import java.util.stream.Collectors;
 
 public class OMRService {
 
-    static {
-        OpenCV.loadLocally();
-    }
+    static { OpenCV.loadLocally(); }
 
+    // =================================================================================
+    // [CLEAN CODE] KHAI BÁO CÁC HẰNG SỐ (MAGIC NUMBERS) LÊN ĐẦU FILE
+    // =================================================================================
+    private static final int MIN_BUBBLE_WIDTH = 10;
+    private static final int MAX_BUBBLE_WIDTH = 35;
+    private static final double MIN_BUBBLE_ASPECT = 0.6;
+    private static final double MAX_BUBBLE_ASPECT = 1.4;
+    private static final int CLUSTER_GAP_X = 20;
+    private static final int CLUSTER_GAP_Y = 15;
+
+    private static final int THRESH_EMPTY = 15;
+    private static final int THRESH_FILLED = 25;
+    private static final double DOUBLE_MARK_RATIO = 0.7;
+
+    // Hàm nạp chồng (Overload) để tương thích ngược với code trên PC (Kéo thả ảnh)
     public static Map<String, String> processExam(String imagePath, ExamConfig config) {
+        // Mặc định gọi hàm chính với mẫu BGD4 nếu chấm thủ công trên PC
+        return processExam(imagePath, config, "BGD4");
+    }
+    public static Map<String, String> processExam(String imagePath, ExamConfig config, String templateId) {
         Mat src = Imgcodecs.imread(imagePath);
         if (src.empty()) return null;
 
-        // =================================================================================
-        // ĐÃ NÂNG CẤP: TỰ ĐỘNG NHẬN DIỆN MỌI ĐUÔI FILE ẢNH (.png, .jpeg, .jpg...)
-        // =================================================================================
         int dotIndex = imagePath.lastIndexOf('.');
         String warpedPath = imagePath;
         if (dotIndex > 0) {
-            String ext = imagePath.substring(dotIndex); // Lấy đuôi (vd: .png)
-            String baseName = imagePath.substring(0, dotIndex); // Lấy tên bỏ đuôi
-            warpedPath = baseName + "_processed" + ext; // Ghép lại: tenfile_processed.png
+            String ext = imagePath.substring(dotIndex);
+            String baseName = imagePath.substring(0, dotIndex);
+            warpedPath = baseName + "_processed" + ext;
         } else {
-            warpedPath += "_processed.jpg"; // Backup nếu file không có đuôi
+            warpedPath += "_processed.jpg";
         }
 
         List<Rect> cornerMarks = findCornerMarks(src);
         if (cornerMarks.size() < 4) return null;
         Mat warped = warpPerspective(src, cornerMarks);
 
+        // =================================================================================
+        // [BYPASS AI] - CHỌN MẪU TỪ TEMPLATE ID DO ĐIỆN THOẠI GỬI SANG
+        // =================================================================================
+        OMRTemplate template;
+        if (templateId != null) {
+            switch (templateId.toUpperCase()) {
+                case "QM": template = TemplateFactory.getQMTemplate(); break;
+                case "TNMAKER": template = TemplateFactory.getTNMakerTemplate(); break;
+                case "BGD3": template = TemplateFactory.getBoGD3SoTemplate(); break;
+                case "BGD4":
+                default: template = TemplateFactory.getBoGD4SoTemplate(); break;
+            }
+        } else {
+            template = TemplateFactory.getBoGD4SoTemplate(); // Mặc định nếu không có ID
+        }
+
+        System.out.println("Đang dùng cấu hình tọa độ của: " + template.templateName);
+
         Mat gray = new Mat();
         Imgproc.cvtColor(warped, gray, Imgproc.COLOR_BGR2GRAY);
         Mat thresh = new Mat();
 
-        // [FIX]: Lấy chỉ số Threshold tự động từ Setting của người dùng
         int thresholdValue = DataManager.getOmrThreshold();
         Imgproc.threshold(gray, thresh, thresholdValue, 255, Imgproc.THRESH_BINARY_INV);
 
@@ -55,34 +87,30 @@ public class OMRService {
         int p2Count = (config != null) ? config.getNumPart2() : 8;
         int p3Count = (config != null) ? config.getNumPart3() : 6;
 
-        // LẤY MẪU KIỂM TRA CHÉO TỪ CÁC CỘT KHÁC (GLOBAL ROW SYNCHRONIZATION)
-        List<Integer> p1_RefYs = getGlobalReferenceYs(thresh, new Rect(100, 560, 1050, 290), 10);
-        List<Integer> p2_RefYs = getGlobalReferenceYs(thresh, new Rect(100, 920, 1050, 150), 4);
-        List<Integer> p3_RefYs = getGlobalReferenceYs(thresh, new Rect(100, 1160, 1050, 345), 12);
+        List<Integer> p1_RefYs = getGlobalReferenceYs(thresh, template.roiPart1, template.p1ExpectedRows);
+        List<Integer> p2_RefYs = getGlobalReferenceYs(thresh, template.roiPart2, template.p2ExpectedRows);
+        List<Integer> p3_RefYs = getGlobalReferenceYs(thresh, template.roiPart3, template.p3ExpectedRows);
 
         // --- QUÉT PHẦN 1 ---
-        int[] p1_X = {115, 375, 645, 915};
-        int p1Boxes = (int) Math.ceil(p1Count / 10.0);
+        int p1Boxes = Math.min(template.p1ColXs.length, (int) Math.ceil(p1Count / (double)template.p1ExpectedRows));
         for (int i = 0; i < p1Boxes; i++) {
-            Rect colBox = new Rect(p1_X[i], 560, 195, 290);
-            int questionsInThisBox = Math.min(10, p1Count - (i * 10));
-            results.putAll(autoPart1Scan(thresh, warped, colBox, i * 10, questionsInThisBox, p1_RefYs));
+            Rect colBox = new Rect(template.p1ColXs[i], template.roiPart1.y, template.p1ColWidth, template.roiPart1.height);
+            int questionsInThisBox = Math.min(template.p1ExpectedRows, p1Count - (i * template.p1ExpectedRows));
+            results.putAll(autoPart1Scan(thresh, warped, colBox, i * template.p1ExpectedRows, questionsInThisBox, p1_RefYs, template.p1ExpectedRows));
         }
 
         // --- QUÉT PHẦN 2 ---
-        int[] p2_X = {110, 220, 370, 480, 640, 745, 910, 1005};
-        int p2Boxes = Math.min(8, p2Count);
+        int p2Boxes = Math.min(template.p2ColXs.length, p2Count);
         for (int i = 0; i < p2Boxes; i++) {
-            Rect tableBox = new Rect(p2_X[i], 920, 98, 150);
-            results.putAll(autoPart2Scan(thresh, warped, tableBox, i, p2_RefYs));
+            Rect tableBox = new Rect(template.p2ColXs[i], template.roiPart2.y, template.p2ColWidth, template.roiPart2.height);
+            results.putAll(autoPart2Scan(thresh, warped, tableBox, i, p2_RefYs, template.p2ExpectedRows));
         }
 
         // --- QUÉT PHẦN 3 ---
-        int[] p3_X = {110, 282, 441, 610, 776, 950};
-        int p3Boxes = Math.min(6, p3Count);
+        int p3Boxes = Math.min(template.p3ColXs.length, p3Count);
         for (int i = 0; i < p3Boxes; i++) {
-            Rect qBox = new Rect(p3_X[i], 1160, 142, 345);
-            String val = scanSmartInterpolationPart3(thresh, warped, qBox, p3_RefYs);
+            Rect qBox = new Rect(template.p3ColXs[i], template.roiPart3.y, template.p3ColWidth, template.roiPart3.height);
+            String val = scanSmartInterpolationPart3(thresh, warped, qBox, p3_RefYs, template.p3ExpectedRows);
             val = validatePart3Format(val);
             results.put("P3_Câu_" + (i + 1), val);
         }
@@ -91,13 +119,18 @@ public class OMRService {
         return results;
     }
 
-    private static List<Integer> getGlobalReferenceYs(Mat thresh, Rect partArea, int expectedRows) {
-        List<Integer> globalYs = new ArrayList<>();
-        partArea.x = Math.max(0, partArea.x); partArea.y = Math.max(0, partArea.y);
-        partArea.width = Math.min(partArea.width, thresh.cols() - partArea.x);
-        partArea.height = Math.min(partArea.height, thresh.rows() - partArea.y);
+    // =================================================================================
+    // CÁC HÀM TIỆN ÍCH DÙNG CHUNG (DRY PRINCIPLE)
+    // =================================================================================
 
-        Mat roi = new Mat(thresh, partArea);
+    // Tách phần lọc Contour ra dùng chung
+    private static List<Rect> extractValidBubbles(Mat thresh, Rect box) {
+        box.x = Math.max(0, box.x);
+        box.y = Math.max(0, box.y);
+        box.width = Math.min(box.width, thresh.cols() - box.x);
+        box.height = Math.min(box.height, thresh.rows() - box.y);
+
+        Mat roi = new Mat(thresh, box);
         List<MatOfPoint> contours = new ArrayList<>();
         Imgproc.findContours(roi, contours, new Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
 
@@ -105,10 +138,33 @@ public class OMRService {
         for (MatOfPoint cnt : contours) {
             Rect r = Imgproc.boundingRect(cnt);
             double aspect = (double) r.width / r.height;
-            if (r.width > 10 && r.width < 35 && aspect > 0.6 && aspect < 1.4) {
+            if (r.width > MIN_BUBBLE_WIDTH && r.width < MAX_BUBBLE_WIDTH && aspect > MIN_BUBBLE_ASPECT && aspect < MAX_BUBBLE_ASPECT) {
                 bubbles.add(r);
             }
         }
+        return bubbles;
+    }
+
+    // Gộp logic phân tích độ đậm nhạt của Bubble
+    private static String evaluateBubbleChoice(int maxPx, int secondMaxPx, String bestLabel, String secondBestLabel, boolean isPart2) {
+        if (maxPx < THRESH_EMPTY) {
+            return "?";
+        } else if (secondMaxPx > (maxPx * DOUBLE_MARK_RATIO)) {
+            return isPart2 ? "ERR_TK" : ("ERR_" + bestLabel + secondBestLabel);
+        } else if (maxPx < THRESH_FILLED) {
+            return "WARN_" + bestLabel;
+        } else {
+            return bestLabel;
+        }
+    }
+
+    // =================================================================================
+    // CÁC HÀM XỬ LÝ CHÍNH
+    // =================================================================================
+
+    private static List<Integer> getGlobalReferenceYs(Mat thresh, Rect partArea, int expectedRows) {
+        List<Integer> globalYs = new ArrayList<>();
+        List<Rect> bubbles = extractValidBubbles(thresh, partArea); // [CLEAN CODE] Gọi hàm dùng chung
 
         if (!bubbles.isEmpty()) {
             bubbles.sort(Comparator.comparingInt(r -> r.y));
@@ -117,7 +173,7 @@ public class OMRService {
             currentRow.add(bubbles.get(0));
 
             for (int i = 1; i < bubbles.size(); i++) {
-                if (bubbles.get(i).y - currentRow.get(0).y < 15) {
+                if (bubbles.get(i).y - currentRow.get(0).y < CLUSTER_GAP_Y) {
                     currentRow.add(bubbles.get(i));
                 } else {
                     rowClusters.add(new ArrayList<>(currentRow));
@@ -147,21 +203,7 @@ public class OMRService {
     }
 
     private static List<List<Rect>> getGridByColumnsWithVisual(Mat thresh, Mat warped, Rect box, int expectedCols, int expectedRows, List<Integer> globalRefYs) {
-        box.x = Math.max(0, box.x); box.y = Math.max(0, box.y);
-        box.width = Math.min(box.width, thresh.cols() - box.x);
-        box.height = Math.min(box.height, thresh.rows() - box.y);
-
-        Mat roi = new Mat(thresh, box);
-        List<MatOfPoint> contours = new ArrayList<>();
-        Imgproc.findContours(roi, contours, new Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
-
-        List<Rect> bubbles = new ArrayList<>();
-        for (MatOfPoint cnt : contours) {
-            Rect r = Imgproc.boundingRect(cnt);
-            double aspect = (double) r.width / r.height;
-            if (r.width > 10 && r.width < 35 && aspect > 0.6 && aspect < 1.4) bubbles.add(r);
-        }
-
+        List<Rect> bubbles = extractValidBubbles(thresh, box); // [CLEAN CODE] Gọi hàm dùng chung
         List<List<Rect>> perfectGrid = new ArrayList<>();
 
         if (bubbles.isEmpty()) {
@@ -185,7 +227,7 @@ public class OMRService {
         currentCol.add(bubbles.get(0));
 
         for (int i = 1; i < bubbles.size(); i++) {
-            if (bubbles.get(i).x - currentCol.get(0).x < 20) {
+            if (bubbles.get(i).x - currentCol.get(0).x < CLUSTER_GAP_X) {
                 currentCol.add(bubbles.get(i));
             } else {
                 colClusters.add(new ArrayList<>(currentCol));
@@ -203,7 +245,6 @@ public class OMRService {
         }
 
         int standardGapX = box.width / expectedCols;
-
         List<Integer> cleanXs = new ArrayList<>();
         if (!finalXs.isEmpty()) {
             cleanXs.add(finalXs.get(0));
@@ -214,9 +255,7 @@ public class OMRService {
             }
         }
 
-        if (cleanXs.isEmpty()) {
-            cleanXs.add(box.width / (expectedCols * 2));
-        }
+        if (cleanXs.isEmpty()) cleanXs.add(box.width / (expectedCols * 2));
         finalXs = cleanXs;
 
         while (finalXs.size() < expectedCols) {
@@ -232,7 +271,7 @@ public class OMRService {
         currentRow.add(bubbles.get(0));
 
         for (int i = 1; i < bubbles.size(); i++) {
-            if (bubbles.get(i).y - currentRow.get(0).y < 15) {
+            if (bubbles.get(i).y - currentRow.get(0).y < CLUSTER_GAP_Y) {
                 currentRow.add(bubbles.get(i));
             } else {
                 rowClusters.add(new ArrayList<>(currentRow));
@@ -328,21 +367,11 @@ public class OMRService {
         return perfectGrid;
     }
 
-    private static String scanSmartInterpolationPart3(Mat thresh, Mat warped, Rect box, List<Integer> globalRefYs) {
+    private static String scanSmartInterpolationPart3(Mat thresh, Mat warped, Rect box, List<Integer> globalRefYs, int expectedRows) {
         int expectedCols = 4;
-        int expectedRows = 12;
         Imgproc.rectangle(warped, box, new Scalar(255, 0, 255), 2);
 
-        Mat roi = new Mat(thresh, box);
-        List<MatOfPoint> contours = new ArrayList<>();
-        Imgproc.findContours(roi, contours, new Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
-
-        List<Rect> bubbles = new ArrayList<>();
-        for (MatOfPoint cnt : contours) {
-            Rect r = Imgproc.boundingRect(cnt);
-            double aspect = (double) r.width / r.height;
-            if (r.width > 10 && r.width < 35 && aspect > 0.6 && aspect < 1.4) bubbles.add(r);
-        }
+        List<Rect> bubbles = extractValidBubbles(thresh, box); // [CLEAN CODE] Gọi hàm dùng chung
 
         if (bubbles.isEmpty()) return "????????????";
 
@@ -352,7 +381,7 @@ public class OMRService {
         currentCol.add(bubbles.get(0));
 
         for (int i = 1; i < bubbles.size(); i++) {
-            if (bubbles.get(i).x - currentCol.get(0).x < 20) {
+            if (bubbles.get(i).x - currentCol.get(0).x < CLUSTER_GAP_X) {
                 currentCol.add(bubbles.get(i));
             } else {
                 colClusters.add(new ArrayList<>(currentCol));
@@ -370,7 +399,6 @@ public class OMRService {
         }
 
         int standardGapX = box.width / expectedCols;
-
         List<Integer> cleanXs = new ArrayList<>();
         if (!finalXs.isEmpty()) {
             cleanXs.add(finalXs.get(0));
@@ -381,9 +409,7 @@ public class OMRService {
             }
         }
 
-        if (cleanXs.isEmpty()) {
-            cleanXs.add(box.width / (expectedCols * 2));
-        }
+        if (cleanXs.isEmpty()) cleanXs.add(box.width / (expectedCols * 2));
         finalXs = cleanXs;
 
         while (finalXs.size() < expectedCols) {
@@ -399,7 +425,7 @@ public class OMRService {
         currentRow.add(bubbles.get(0));
 
         for (int i = 1; i < bubbles.size(); i++) {
-            if (bubbles.get(i).y - currentRow.get(0).y < 15) {
+            if (bubbles.get(i).y - currentRow.get(0).y < CLUSTER_GAP_Y) {
                 currentRow.add(bubbles.get(i));
             } else {
                 rowClusters.add(new ArrayList<>(currentRow));
@@ -488,17 +514,17 @@ public class OMRService {
                     if (px > maxPx) { maxPx = px; bestRow = r; }
                 }
             }
-            if (maxPx > 15) result.append(mapP3Row(bestRow));
+            if (maxPx > THRESH_EMPTY) result.append(mapP3Row(bestRow));
             else result.append("?");
         }
         return result.toString();
     }
 
-    private static Map<String, String> autoPart1Scan(Mat thresh, Mat warped, Rect box, int startIdx, int numQuestionsToScan, List<Integer> globalRefYs) {
+    private static Map<String, String> autoPart1Scan(Mat thresh, Mat warped, Rect box, int startIdx, int numQuestionsToScan, List<Integer> globalRefYs, int expectedRows) {
         Map<String, String> map = new LinkedHashMap<>();
         Imgproc.rectangle(warped, box, new Scalar(0, 255, 0), 2);
 
-        List<List<Rect>> columns = getGridByColumnsWithVisual(thresh, warped, box, 4, 10, globalRefYs);
+        List<List<Rect>> columns = getGridByColumnsWithVisual(thresh, warped, box, 4, expectedRows, globalRefYs);
         char[] labels = {'A', 'B', 'C', 'D'};
 
         if (columns.size() < 4) {
@@ -533,26 +559,21 @@ public class OMRService {
                 }
             }
 
-            String ans = "?";
-            if (maxPx < 15) {
-                ans = "?";
-            } else if (secondMaxPx > (maxPx * 0.7)) {
-                ans = "ERR_" + labels[bestCol] + "" + labels[secondBestCol];
-            } else if (maxPx < 25) {
-                ans = "WARN_" + labels[bestCol];
-            } else {
-                ans = String.valueOf(labels[bestCol]);
-            }
+            // [CLEAN CODE] Tái sử dụng logic xác định kết quả
+            String bestLabel = bestCol != -1 ? String.valueOf(labels[bestCol]) : "";
+            String secondLabel = secondBestCol != -1 ? String.valueOf(labels[secondBestCol]) : "";
+            String ans = evaluateBubbleChoice(maxPx, secondMaxPx, bestLabel, secondLabel, false);
+
             map.put("P1_Câu_" + (startIdx + row + 1), ans);
         }
         return map;
     }
 
-    private static Map<String, String> autoPart2Scan(Mat thresh, Mat warped, Rect box, int questionIdx, List<Integer> globalRefYs) {
+    private static Map<String, String> autoPart2Scan(Mat thresh, Mat warped, Rect box, int questionIdx, List<Integer> globalRefYs, int expectedRows) {
         Map<String, String> map = new LinkedHashMap<>();
         Imgproc.rectangle(warped, box, new Scalar(0, 165, 255), 2);
 
-        List<List<Rect>> columns = getGridByColumnsWithVisual(thresh, warped, box, 2, 4, globalRefYs);
+        List<List<Rect>> columns = getGridByColumnsWithVisual(thresh, warped, box, 2, expectedRows, globalRefYs);
         int cauNum = questionIdx + 1;
 
         for (int i = 0; i < 4; i++) {
@@ -583,16 +604,11 @@ public class OMRService {
                 }
             }
 
-            String ans = "?";
-            if (maxPx < 15) {
-                ans = "?";
-            } else if (secondMaxPx > (maxPx * 0.7)) {
-                ans = "ERR_TK";
-            } else if (maxPx < 25) {
-                ans = "WARN_" + (bestCol == 0 ? "Đ" : "S");
-            } else {
-                ans = (bestCol == 0 ? "Đ" : "S");
-            }
+            // [CLEAN CODE] Tái sử dụng logic xác định kết quả
+            String bestLabel = bestCol == 0 ? "Đ" : "S";
+            String secondLabel = secondBestCol == 0 ? "Đ" : "S";
+            String ans = evaluateBubbleChoice(maxPx, secondMaxPx, bestLabel, secondLabel, true);
+
             map.put("P2_Câu_" + cauNum + "_" + yChu, ans);
         }
         return map;
@@ -666,16 +682,5 @@ public class OMRService {
         if (minusCount > 1 || commaCount > 1) isValid = false;
         if (!isValid) return "WARN_FMT_" + val;
         return val;
-    }
-
-    public static void main(String[] args) {
-        String inputPath = "D:\\tailieuhoctap\\laptrinhnangcao\\th\\btl\\ChamTracNghiem\\phieumau.jpg";
-        System.out.println("--- ĐANG CHẠY CHẾ ĐỘ PRODUCTION (TÍCH HỢP KIỂM TRA CHÉO) ---");
-        ExamConfig testConfig = new ExamConfig(40, 8, 6);
-        Map<String, String> results = processExam(inputPath, testConfig);
-        if (results != null) {
-            System.out.println("\n[KẾT QUẢ]");
-            results.forEach((key, value) -> System.out.println(key + " : " + value));
-        }
     }
 }

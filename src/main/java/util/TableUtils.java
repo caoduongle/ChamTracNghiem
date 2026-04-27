@@ -1,4 +1,4 @@
-package controller;
+package util;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;

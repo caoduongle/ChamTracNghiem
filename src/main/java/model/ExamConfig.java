@@ -8,37 +8,55 @@ import java.util.Set;
 public class ExamConfig implements Serializable {
     private static final long serialVersionUID = 2L;
 
+    // [CLEAN CODE] Đưa chuỗi lặp lại thành hằng số dùng chung
+    public static final String DEFAULT_CODE = "Mặc định";
+
     private int numPart1, numPart2, numPart3;
     private double scoreP1, scoreP2_1, scoreP2_2, scoreP2_3, scoreP2_4, scoreP3;
 
     private Map<String, Map<String, String>> answersByCode = new HashMap<>();
-    private String activeCode = "Mặc định";
+    private String activeCode = DEFAULT_CODE;
+
+    // [BẢN VÁ] Bổ sung Constructor rỗng để an toàn khi Serialize/Deserialize và dùng cho OMRTest
+    public ExamConfig() {
+        this(40, 8, 6); // Gọi sang constructor bên dưới
+    }
 
     public ExamConfig(int p1, int p2, int p3) {
         this.numPart1 = p1;
         this.numPart2 = p2;
         this.numPart3 = p3;
-        addExamCode("Mặc định");
+        addExamCode(DEFAULT_CODE);
     }
 
-    // [GETTERS/SETTERS]
+    // [GETTERS/SETTERS] cho số lượng câu hỏi (Để OMRTest có thể gọi được)
     public int getNumPart1() { return numPart1; }
+    public void setNumPart1(int numPart1) { this.numPart1 = numPart1; }
+
     public int getNumPart2() { return numPart2; }
+    public void setNumPart2(int numPart2) { this.numPart2 = numPart2; }
+
     public int getNumPart3() { return numPart3; }
+    public void setNumPart3(int numPart3) { this.numPart3 = numPart3; }
 
-    public void setScoreP1(double s) { scoreP1 = s; }
-    public void setScoreP2_1(double s) { scoreP2_1 = s; }
-    public void setScoreP2_2(double s) { scoreP2_2 = s; }
-    public void setScoreP2_3(double s) { scoreP2_3 = s; }
-    public void setScoreP2_4(double s) { scoreP2_4 = s; }
-    public void setScoreP3(double s) { scoreP3 = s; }
-
+    // [GETTERS/SETTERS] cho điểm số
     public double getScoreP1() { return scoreP1; }
+    public void setScoreP1(double s) { scoreP1 = s; }
+
     public double getScoreP2_1() { return scoreP2_1; }
+    public void setScoreP2_1(double s) { scoreP2_1 = s; }
+
     public double getScoreP2_2() { return scoreP2_2; }
+    public void setScoreP2_2(double s) { scoreP2_2 = s; }
+
     public double getScoreP2_3() { return scoreP2_3; }
+    public void setScoreP2_3(double s) { scoreP2_3 = s; }
+
     public double getScoreP2_4() { return scoreP2_4; }
+    public void setScoreP2_4(double s) { scoreP2_4 = s; }
+
     public double getScoreP3() { return scoreP3; }
+    public void setScoreP3(double s) { scoreP3 = s; }
 
     // [QUẢN LÝ ĐA MÃ ĐỀ]
     public Set<String> getExamCodes() { return answersByCode.keySet(); }
@@ -50,7 +68,7 @@ public class ExamConfig implements Serializable {
     }
 
     public void removeExamCode(String code) {
-        if (!"Mặc định".equals(code)) answersByCode.remove(code);
+        if (!DEFAULT_CODE.equals(code)) answersByCode.remove(code);
     }
 
     public String getActiveCode() { return activeCode; }
@@ -59,7 +77,7 @@ public class ExamConfig implements Serializable {
         if (code != null && answersByCode.containsKey(code)) {
             this.activeCode = code;
         } else {
-            this.activeCode = "Mặc định";
+            this.activeCode = DEFAULT_CODE;
         }
     }
 

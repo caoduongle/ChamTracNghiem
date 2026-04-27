@@ -1,5 +1,6 @@
 package view;
 
+import util.TableUtils;
 import model.ClassRoom;
 import service.DataManager;
 import service.ExcelService;
@@ -259,7 +260,7 @@ class ClassEditorDialog extends JDialog {
         m = new DefaultTableModel(cols, initialSize);
         tbl = new JTable(m);
         tbl.setRowHeight(25);
-        controller.TableUtils.enableExcelPaste(tbl);
+        TableUtils.enableExcelPaste(tbl);
         add(new JScrollPane(tbl), BorderLayout.CENTER);
 
         enableDragAndDrop();

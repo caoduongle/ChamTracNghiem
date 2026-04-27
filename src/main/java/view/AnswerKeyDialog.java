@@ -1,5 +1,6 @@
 package view;
 
+import util.TableUtils;
 import model.ExamConfig;
 import org.apache.poi.ss.usermodel.*;
 
@@ -11,7 +12,6 @@ import java.awt.*;
 import java.awt.Color;
 import java.awt.Font;
 import java.io.File;
-import java.io.FileInputStream;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -107,7 +107,7 @@ public class AnswerKeyDialog extends JDialog {
         // 3. Bảng nhập đáp án
         tableModel = new DefaultTableModel(new String[]{"STT", "Phần", "Đáp án đúng (" + currentCode + ")"}, 0);
         tblAnswers = new JTable(tableModel);
-        controller.TableUtils.enableExcelPaste(tblAnswers);
+        TableUtils.enableExcelPaste(tblAnswers);
         add(new JScrollPane(tblAnswers), BorderLayout.CENTER);
 
         // 4. Nút chức năng
