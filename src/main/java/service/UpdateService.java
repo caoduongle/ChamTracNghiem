@@ -17,7 +17,9 @@ public class UpdateService {
     public static void checkForUpdates(JFrame parentView) {
         try {
             // 1. Đọc phiên bản trên mạng
-            URL url = new URL(VERSION_URL);
+            String noCacheUrl = VERSION_URL + "?t=" + System.currentTimeMillis();
+            URL url = new URL(noCacheUrl);
+
             BufferedReader in = new BufferedReader(new InputStreamReader(url.openStream()));
             String latestVersion = in.readLine().trim();
             in.close();
