@@ -107,6 +107,7 @@ public class AnswerKeyDialog extends JDialog {
         // 3. Bảng nhập đáp án
         tableModel = new DefaultTableModel(new String[]{"STT", "Phần", "Đáp án đúng (" + currentCode + ")"}, 0);
         tblAnswers = new JTable(tableModel);
+        controller.TableUtils.enableExcelPaste(tblAnswers);
         add(new JScrollPane(tblAnswers), BorderLayout.CENTER);
 
         // 4. Nút chức năng

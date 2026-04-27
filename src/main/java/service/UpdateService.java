@@ -8,7 +8,7 @@ import java.util.List;
 
 public class UpdateService {
     // Phiên bản hiện tại của phần mềm
-    public static final String CURRENT_VERSION = "1.5.0";
+    public static final String CURRENT_VERSION = "1.5.1";
 
     private static final String VERSION_URL = "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/version.txt";
     private static final String DOWNLOAD_BASE_URL = "https://github.com/caoduongle/ChamTracNghiem/releases/download/v";

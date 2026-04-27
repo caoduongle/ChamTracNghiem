@@ -5,6 +5,8 @@ import service.DataManager;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.File;
 import java.util.List;
 import java.util.prefs.Preferences;
@@ -32,13 +34,14 @@ public class ClassManagementDialog extends JDialog {
         tblClasses = new JTable(model);
         tblClasses.setRowHeight(30);
         tblClasses.setFont(new Font("Arial", Font.PLAIN, 14));
+        // Đổi con trỏ chuột thành hình bàn tay khi di chuột qua bảng để giống File Explorer
+        tblClasses.setCursor(new Cursor(Cursor.HAND_CURSOR));
 
         JPanel pnlList = new JPanel(new BorderLayout());
         pnlList.setBorder(BorderFactory.createTitledBorder("Danh sách lớp đang dạy:"));
         pnlList.add(new JScrollPane(tblClasses), BorderLayout.CENTER);
         add(pnlList, BorderLayout.CENTER);
 
-        // [FIX]: Chuyển thành GridLayout(5, 2) để chứa thêm nút Cài đặt
         JPanel pnlBtns = new JPanel(new GridLayout(5, 2, 5, 5));
         pnlBtns.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
@@ -49,19 +52,78 @@ public class ClassManagementDialog extends JDialog {
         JButton btnDel = new JButton("❌ Xóa lớp");
         JButton btnTrash = new JButton("🗑 Thùng rác lớp học");
         JButton btnClassDashboard = new JButton("📈 Thống kê Tổng quan Lớp");
-        JButton btnSettings = new JButton("⚙ Cài đặt hệ thống"); // Thêm nút mới
+        JButton btnSettings = new JButton("⚙ Cài đặt hệ thống");
         JLabel emptyLabel = new JLabel("");
 
         pnlBtns.add(btnNew); pnlBtns.add(btnOpen);
         pnlBtns.add(btnRename); pnlBtns.add(btnEdit);
         pnlBtns.add(btnDel); pnlBtns.add(btnTrash);
-        pnlBtns.add(btnClassDashboard); pnlBtns.add(btnSettings); // Thay thế nhãn trống bằng nút Cài đặt
-        pnlBtns.add(emptyLabel); // Đẩy nhãn trống xuống cuối
+        pnlBtns.add(btnClassDashboard); pnlBtns.add(btnSettings);
+        pnlBtns.add(emptyLabel);
 
         add(pnlBtns, BorderLayout.SOUTH);
 
+        // ====================================================================
+        // [UX NÂNG CẤP]: MENU CHUỘT PHẢI (CONTEXT MENU) GIỐNG FILE EXPLORER
+        // ====================================================================
+        JPopupMenu popupMenu = new JPopupMenu();
+        JMenuItem itemOpen = new JMenuItem("✔ Mở lớp này");
+        JMenuItem itemRename = new JMenuItem("📝 Đổi tên lớp");
+        JMenuItem itemEdit = new JMenuItem("✏ Sửa sĩ số / Danh sách");
+        JMenuItem itemDashboard = new JMenuItem("📈 Thống kê lớp");
+        JMenuItem itemDel = new JMenuItem("❌ Xóa lớp");
+
+        // Cấu hình UI cho Menu
+        itemOpen.setFont(new Font("Arial", Font.BOLD, 13)); // Nút mở in đậm
+        itemDel.setForeground(Color.RED); // Nút xóa màu đỏ
+
+        popupMenu.add(itemOpen);
+        popupMenu.addSeparator(); // Dòng kẻ ngang phân cách
+        popupMenu.add(itemRename);
+        popupMenu.add(itemEdit);
+        popupMenu.add(itemDashboard);
+        popupMenu.addSeparator();
+        popupMenu.add(itemDel);
+
+        // Nối sự kiện từ Menu vào các Nút bấm trên giao diện (Tái sử dụng code)
+        itemOpen.addActionListener(e -> btnOpen.doClick());
+        itemRename.addActionListener(e -> btnRename.doClick());
+        itemEdit.addActionListener(e -> btnEdit.doClick());
+        itemDashboard.addActionListener(e -> btnClassDashboard.doClick());
+        itemDel.addActionListener(e -> btnDel.doClick());
+
+        // Gắn bộ lắng nghe sự kiện chuột vào Bảng
+        tblClasses.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                // Xử lý Click ĐÚP chuột trái -> Mở lớp
+                if (SwingUtilities.isLeftMouseButton(e) && e.getClickCount() == 2) {
+                    int row = tblClasses.rowAtPoint(e.getPoint());
+                    if (row != -1) {
+                        btnOpen.doClick();
+                    }
+                }
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                // Xử lý Click CHUỘT PHẢI -> Hiện Menu
+                if (SwingUtilities.isRightMouseButton(e) || e.isPopupTrigger()) {
+                    int row = tblClasses.rowAtPoint(e.getPoint());
+                    if (row != -1) {
+                        // Tự động bôi đen dòng mà chuột phải click vào
+                        tblClasses.setRowSelectionInterval(row, row);
+                        // Hiển thị Popup Menu tại tọa độ chuột
+                        popupMenu.show(e.getComponent(), e.getX(), e.getY());
+                    }
+                }
+            }
+        });
+        // ====================================================================
+
         loadClasses();
 
+        // CÁC SỰ KIỆN NÚT BẤM BÊN DƯỚI GIỮ NGUYÊN
         btnNew.addActionListener(e -> {
             String name = JOptionPane.showInputDialog(this, "Nhập tên lớp mới (VD: 10A1):");
             if (name == null || name.trim().isEmpty()) return;
@@ -138,14 +200,11 @@ public class ClassManagementDialog extends JDialog {
             }
         });
 
-        // [NEW]: Sự kiện mở hộp thoại cài đặt
         btnSettings.addActionListener(e -> {
             new SettingsDialog((JFrame) SwingUtilities.getWindowAncestor(this)).setVisible(true);
         });
 
         setLocationRelativeTo(parent);
-
-        // Nhớ vị trí cho màn hình ClassManagement
         service.WindowPersistenceManager.restoreWindow(this, "ClassManagementDialog", 550, 500);
         service.WindowPersistenceManager.attachSaver(this, "ClassManagementDialog");
     }
@@ -161,9 +220,6 @@ public class ClassManagementDialog extends JDialog {
     public ClassRoom getSelectedClass() { return selectedClass; }
 }
 
-// ========================================================
-// HỘP THOẠI NHẬP DANH SÁCH - TÍCH HỢP KÉO THẢ EXCEL
-// ========================================================
 class ClassEditorDialog extends JDialog {
     private ClassRoom cr;
     private boolean saved = false;
@@ -211,6 +267,7 @@ class ClassEditorDialog extends JDialog {
         m = new DefaultTableModel(cols, initialSize);
         tbl = new JTable(m);
         tbl.setRowHeight(25);
+        controller.TableUtils.enableExcelPaste(tbl);
         add(new JScrollPane(tbl), BorderLayout.CENTER);
 
         enableDragAndDrop();

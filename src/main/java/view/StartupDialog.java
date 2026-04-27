@@ -6,6 +6,8 @@ import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -84,6 +86,9 @@ public class StartupDialog extends JDialog {
         };
         tblExams = new JTable(tableModel);
         tblExams.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        // Đổi con trỏ chuột thành hình bàn tay
+        tblExams.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
         refreshExamList();
 
         JPanel pnlList = new JPanel(new BorderLayout());
@@ -96,8 +101,8 @@ public class StartupDialog extends JDialog {
 
         JPanel pnlBtns = new JPanel(new GridLayout(4, 2, 5, 5));
         btnNew = new JButton("Chấm đề mới");
-        btnOpen = new JButton("Mở đề cũ");
-        btnRename = new JButton("✏ Đổi tên đề");
+        btnOpen = new JButton("✔ Mở đề cũ");
+        btnRename = new JButton("📝 Đổi tên đề");
         btnDelete = new JButton("❌ Xóa đề");
         btnTrash = new JButton("🗑 Thùng rác");
         btnTutorial = new JButton("Hướng dẫn");
@@ -114,7 +119,56 @@ public class StartupDialog extends JDialog {
         pnlBottomControls.add(pnlBtns, BorderLayout.CENTER);
         add(pnlBottomControls, BorderLayout.SOUTH);
 
-        // --- SỰ KIỆN ---
+        // ====================================================================
+        // [UX NÂNG CẤP]: MENU CHUỘT PHẢI (CONTEXT MENU) GIỐNG FILE EXPLORER
+        // ====================================================================
+        JPopupMenu popupMenu = new JPopupMenu();
+        JMenuItem itemOpen = new JMenuItem("✔ Mở đề thi này");
+        JMenuItem itemRename = new JMenuItem("📝 Đổi tên đề thi");
+        JMenuItem itemDel = new JMenuItem("❌ Xóa đề thi");
+
+        itemOpen.setFont(new Font("Arial", Font.BOLD, 13));
+        itemDel.setForeground(Color.RED);
+
+        popupMenu.add(itemOpen);
+        popupMenu.addSeparator();
+        popupMenu.add(itemRename);
+        popupMenu.addSeparator();
+        popupMenu.add(itemDel);
+
+        // Kích hoạt nút bấm tương ứng trên giao diện
+        itemOpen.addActionListener(e -> btnOpen.doClick());
+        itemRename.addActionListener(e -> btnRename.doClick());
+        itemDel.addActionListener(e -> btnDelete.doClick());
+
+        // Bắt sự kiện chuột cho bảng tblExams
+        tblExams.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                // Click đúp chuột trái
+                if (SwingUtilities.isLeftMouseButton(e) && e.getClickCount() == 2) {
+                    int row = tblExams.rowAtPoint(e.getPoint());
+                    if (row != -1) {
+                        btnOpen.doClick();
+                    }
+                }
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                // Click chuột phải
+                if (SwingUtilities.isRightMouseButton(e) || e.isPopupTrigger()) {
+                    int row = tblExams.rowAtPoint(e.getPoint());
+                    if (row != -1) {
+                        tblExams.setRowSelectionInterval(row, row); // Tự động bôi đen
+                        popupMenu.show(e.getComponent(), e.getX(), e.getY());
+                    }
+                }
+            }
+        });
+        // ====================================================================
+
+        // --- SỰ KIỆN NÚT BẤM (GIỮ NGUYÊN) ---
         txtSearch.getDocument().addDocumentListener(new DocumentListener() {
             public void insertUpdate(DocumentEvent e) { applyFilters(); }
             public void removeUpdate(DocumentEvent e) { applyFilters(); }
@@ -175,15 +229,11 @@ public class StartupDialog extends JDialog {
             dispose();
         });
 
-        // ==========================================================
-        // ĐÃ SỬA: Gắn sự kiện cho nút Hướng dẫn gọi đến form Tutorial
-        // ==========================================================
         btnTutorial.addActionListener(e -> {
             new TutorialDialog(parent).setVisible(true);
         });
 
         setLocationRelativeTo(parent);
-        // Thêm vào cuối hàm public StartupDialog(...) { ... }
         service.WindowPersistenceManager.restoreWindow(this, "StartupDialog", 650, 700);
         service.WindowPersistenceManager.attachSaver(this, "StartupDialog");
     }
