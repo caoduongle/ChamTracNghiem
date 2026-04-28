@@ -18,7 +18,7 @@ public class LocalServer {
     private static HttpServer server;
     private static boolean isRunning = false;
 
-    // [MỚI]: Interface đồng bộ hai chiều
+    // Interface đồng bộ hai chiều
     public interface ServerSyncListener {
         void onImageReceived(String className, String examName, String stt, String templateId, String examCode, String imagePath);
         void onTemplateChanged(String className, String examName, String newTemplateId);
@@ -29,6 +29,7 @@ public class LocalServer {
         try {
             server = HttpServer.create(new InetSocketAddress(port), 0);
 
+            // Các cổng giao tiếp
             server.createContext("/api/classes", new ClassesHandler());
             server.createContext("/api/create_class", new CreateClassHandler());
             server.createContext("/api/exams", new ExamsHandler());
@@ -37,14 +38,13 @@ public class LocalServer {
             server.createContext("/api/exam_codes", new ExamCodesHandler());
             server.createContext("/api/create_exam_code", new CreateExamCodeHandler());
 
-            // API Mẫu phiếu
+            // API Mẫu phiếu và Đồng bộ
             server.createContext("/api/templates", new TemplatesHandler());
             server.createContext("/api/template_image", new TemplateImageHandler());
-
-            // [MỚI]: API Đồng bộ Mẫu phiếu PC <-> ĐT
             server.createContext("/api/current_template", new CurrentTemplateHandler());
             server.createContext("/api/set_template", new SetTemplateHandler(listener));
 
+            // API Nạp ảnh bài thi
             server.createContext("/api/upload", new UploadHandler(listener));
 
             server.setExecutor(null);
@@ -61,7 +61,7 @@ public class LocalServer {
     }
 
     // ==============================================================
-    // HANDLERS: ĐỒNG BỘ MẪU PHIẾU
+    // HANDLERS ĐỒNG BỘ MẪU PHIẾU
     // ==============================================================
     static class CurrentTemplateHandler implements HttpHandler {
         @Override
@@ -70,7 +70,6 @@ public class LocalServer {
             String cName = params.get("class");
             String eName = params.get("exam");
 
-            // Đọc mẫu phiếu đang lưu trong bộ nhớ PC
             String tId = java.util.prefs.Preferences.userRoot().node("ChamTracNghiem_N7").get("TEMPLATE_" + cName + "_" + eName, "BGD4");
             sendResponse(exchange, 200, tId);
         }
@@ -86,11 +85,9 @@ public class LocalServer {
             String eName = URLDecoder.decode(exchange.getRequestHeaders().getFirst("X-Exam-Name"), StandardCharsets.UTF_8.name());
             String tId = URLDecoder.decode(exchange.getRequestHeaders().getFirst("X-Template-ID"), StandardCharsets.UTF_8.name());
 
-            // Lưu mẫu mới từ Điện thoại vào bộ nhớ PC
             java.util.prefs.Preferences.userRoot().node("ChamTracNghiem_N7").put("TEMPLATE_" + cName + "_" + eName, tId);
             sendResponse(exchange, 200, "OK");
 
-            // Ra lệnh cập nhật Giao diện PC
             if (listener != null) listener.onTemplateChanged(cName, eName, tId);
         }
     }
@@ -108,6 +105,7 @@ public class LocalServer {
         public void handle(HttpExchange exchange) throws IOException {
             Map<String, String> params = getQueryParams(exchange);
             String id = params.get("id");
+
             File imgFile = new File("data/templates/" + id + ".jpg");
             if (!imgFile.exists()) imgFile = new File("data/templates/" + id + ".png");
 
@@ -125,81 +123,8 @@ public class LocalServer {
         }
     }
 
-    static class UploadHandler implements HttpHandler {
-        private ServerSyncListener listener;
-        public UploadHandler(ServerSyncListener listener) { this.listener = listener; }
-
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String classNameRaw = exchange.getRequestHeaders().getFirst("X-Class-Name");
-            String examNameRaw = exchange.getRequestHeaders().getFirst("X-Exam-Name");
-            String stt = exchange.getRequestHeaders().getFirst("X-Student-STT");
-            String templateId = exchange.getRequestHeaders().getFirst("X-Template-ID");
-
-            String examCodeRaw = exchange.getRequestHeaders().getFirst("X-Exam-Code");
-            String examCode = (examCodeRaw != null) ? URLDecoder.decode(examCodeRaw, StandardCharsets.UTF_8.name()) : "";
-
-            if (classNameRaw == null || examNameRaw == null || stt == null) {
-                sendResponse(exchange, 400, "Incomplete Metadata");
-                return;
-            }
-
-            String className = URLDecoder.decode(classNameRaw, StandardCharsets.UTF_8.name());
-            String examName = URLDecoder.decode(examNameRaw, StandardCharsets.UTF_8.name());
-
-            File saveDir = new File("data/classes/" + className + "/images/" + examName);
-            if (!saveDir.exists()) saveDir.mkdirs();
-            File imageFile = new File(saveDir, stt + ".jpg");
-
-            try (InputStream is = exchange.getRequestBody(); FileOutputStream fos = new FileOutputStream(imageFile)) {
-                byte[] buffer = new byte[8192];
-                int read;
-                while ((read = is.read(buffer)) != -1) fos.write(buffer, 0, read);
-            }
-
-            System.out.println("📥 Đã nhận bài: Lớp " + className + " | STT: " + stt + " | Mẫu: " + templateId);
-            sendResponse(exchange, 200, "Success");
-
-            if (listener != null) listener.onImageReceived(className, examName, stt, templateId, examCode, imageFile.getAbsolutePath());
-        }
-    }
     // ==============================================================
-    // HANDLERS: MẪU PHIẾU (MỚI)
-    // ==============================================================
-    static class TemplatesHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            // Giả lập danh sách ID các mẫu phiếu có sẵn
-            String json = "[\"BGD4\", \"BGD3\", \"QM\", \"TNMAKER\"]";
-            sendResponse(exchange, 200, json);
-        }
-    }
-
-    static class TemplateImageHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            Map<String, String> params = getQueryParams(exchange);
-            String id = params.get("id");
-
-            // Tìm ảnh trong thư mục data/templates/ trên PC
-            File imgFile = new File("data/templates/" + id + ".jpg");
-            if (!imgFile.exists()) imgFile = new File("data/templates/" + id + ".png");
-
-            if (imgFile.exists()) {
-                exchange.getResponseHeaders().set("Content-Type", "image/jpeg");
-                exchange.sendResponseHeaders(200, imgFile.length());
-                try (OutputStream os = exchange.getResponseBody(); FileInputStream fis = new FileInputStream(imgFile)) {
-                    byte[] buffer = new byte[8192];
-                    int count;
-                    while ((count = fis.read(buffer)) != -1) os.write(buffer, 0, count);
-                }
-            } else {
-                sendResponse(exchange, 404, "Image Not Found");
-            }
-        }
-    }
-    // ==============================================================
-    // 1. HANDLERS LỚP HỌC & HỌC SINH
+    // HANDLERS LỚP & HỌC SINH
     // ==============================================================
     static class ClassesHandler implements HttpHandler {
         @Override
@@ -261,7 +186,7 @@ public class LocalServer {
     }
 
     // ==============================================================
-    // 2. HANDLERS ĐỀ THI
+    // HANDLERS ĐỀ THI & MÃ ĐỀ
     // ==============================================================
     static class ExamsHandler implements HttpHandler {
         @Override
@@ -308,9 +233,6 @@ public class LocalServer {
         }
     }
 
-    // ==============================================================
-    // 3. HANDLERS MÃ ĐỀ (MỚI)
-    // ==============================================================
     static class ExamCodesHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -355,11 +277,11 @@ public class LocalServer {
     }
 
     // ==============================================================
-    // 4. HANDLER NHẬN ẢNH UPLOAD TỪ APP
+    // HANDLER UPLOAD ẢNH BÀI LÀM
     // ==============================================================
     static class UploadHandler implements HttpHandler {
-        private OnImageReceivedListener listener;
-        public UploadHandler(OnImageReceivedListener listener) { this.listener = listener; }
+        private ServerSyncListener listener;
+        public UploadHandler(ServerSyncListener listener) { this.listener = listener; }
 
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -389,10 +311,10 @@ public class LocalServer {
                 while ((read = is.read(buffer)) != -1) fos.write(buffer, 0, read);
             }
 
-            System.out.println("📥 Mobile App gửi bài: Lớp " + className + " | STT: " + stt + " | Mã đề: " + examCode);
+            System.out.println("📥 Đã nhận bài: Lớp " + className + " | STT: " + stt + " | Mẫu: " + templateId);
             sendResponse(exchange, 200, "Success");
 
-            if (listener != null) listener.onReceived(className, examName, stt, templateId, examCode, imageFile.getAbsolutePath());
+            if (listener != null) listener.onImageReceived(className, examName, stt, templateId, examCode, imageFile.getAbsolutePath());
         }
     }
 

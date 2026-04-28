@@ -10,7 +10,7 @@ public class MainView extends JFrame {
     private JButton btnConnectPhone;
     private JButton btnBackToMenu;
     private JButton btnSetAnswerKey;
-    private JComboBox<String> cbxTemplate; // [MỚI]: Ô chọn Mẫu phiếu trên PC
+    private JComboBox<String> cbxTemplate; // Ô chọn Mẫu phiếu trên PC
     private JButton btnStartGrading;
     private JButton btnStopGrading;
     private JTable tblResults;
@@ -45,7 +45,7 @@ public class MainView extends JFrame {
         btnBackToMenu = new JButton("⬅ Trở về Menu");
         btnSetAnswerKey = new JButton("1. Cài đặt đáp án");
 
-        // [MỚI]: Khởi tạo danh sách mẫu phiếu
+        // Khởi tạo danh sách mẫu phiếu
         cbxTemplate = new JComboBox<>(new String[]{"BGD4", "BGD3", "QM", "TNMAKER"});
 
         btnConnectPhone = new JButton("📱 Kết nối Điện thoại");
@@ -180,7 +180,7 @@ public class MainView extends JFrame {
     public JButton getBtnConnectPhone() { return btnConnectPhone; }
     public JButton getBtnBackToMenu() { return btnBackToMenu; }
     public JButton getBtnSetAnswerKey() { return btnSetAnswerKey; }
-    public JComboBox<String> getCbxTemplate() { return cbxTemplate; } // Getter mới
+    public JComboBox<String> getCbxTemplate() { return cbxTemplate; }
     public JButton getBtnStartGrading() { return btnStartGrading; }
     public JButton getBtnStopGrading() { return btnStopGrading; }
     public JTable getTblResults() { return tblResults; }

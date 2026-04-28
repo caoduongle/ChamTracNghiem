@@ -66,7 +66,6 @@ public class MainController {
     }
 
     private void startGlobalServer() {
-        // [MỚI]: Khai báo Interface đồng bộ 2 chiều
         service.LocalServer.startServer(8080, new service.LocalServer.ServerSyncListener() {
             @Override
             public void onImageReceived(String className, String examName, String stt, String templateId, String examCode, String imagePath) {
@@ -115,7 +114,6 @@ public class MainController {
 
             @Override
             public void onTemplateChanged(String className, String examName, String newTemplateId) {
-                // Sự kiện khi App Điện thoại bấm chọn mẫu mới -> Cập nhật PC
                 SwingUtilities.invokeLater(() -> {
                     try {
                         boolean isClassMatch = currentClassRoom != null && currentClassRoom.className.trim().equalsIgnoreCase(className.trim());
@@ -195,7 +193,6 @@ public class MainController {
             tableManager.updateExamCodeEditor(currentConfig.getExamCodes());
         }
 
-        // [MỚI]: Tự động load Mẫu Phiếu đã chọn từ bộ nhớ cục bộ
         if (currentClassRoom != null && currentSession != null) {
             String savedTemp = Preferences.userRoot().node("ChamTracNghiem_N7")
                     .get("TEMPLATE_" + currentClassRoom.className + "_" + currentSession.getExamName(), "BGD4");
@@ -214,7 +211,6 @@ public class MainController {
 
         view.getBtnConnectPhone().addActionListener(e -> showConnectionDialog());
 
-        // [MỚI]: Khi PC đổi Mẫu Phiếu -> Lưu lại để App tải về
         view.getCbxTemplate().addActionListener(e -> {
             if (currentClassRoom != null && currentSession != null) {
                 String selected = (String) view.getCbxTemplate().getSelectedItem();
