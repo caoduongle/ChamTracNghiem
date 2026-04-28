@@ -18,7 +18,6 @@ public class LocalServer {
     private static HttpServer server;
     private static boolean isRunning = false;
 
-    // Interface đồng bộ hai chiều
     public interface ServerSyncListener {
         void onImageReceived(String className, String examName, String stt, String templateId, String examCode, String imagePath);
         void onTemplateChanged(String className, String examName, String newTemplateId);
@@ -29,7 +28,6 @@ public class LocalServer {
         try {
             server = HttpServer.create(new InetSocketAddress(port), 0);
 
-            // API Quản lý lớp và học sinh
             server.createContext("/api/classes", new ClassesHandler());
             server.createContext("/api/create_class", new CreateClassHandler());
             server.createContext("/api/exams", new ExamsHandler());
@@ -38,13 +36,11 @@ public class LocalServer {
             server.createContext("/api/exam_codes", new ExamCodesHandler());
             server.createContext("/api/create_exam_code", new CreateExamCodeHandler());
 
-            // API Mẫu phiếu và Đồng bộ
             server.createContext("/api/templates", new TemplatesHandler());
             server.createContext("/api/template_image", new TemplateImageHandler());
             server.createContext("/api/current_template", new CurrentTemplateHandler());
             server.createContext("/api/set_template", new SetTemplateHandler(listener));
 
-            // API Nạp ảnh bài thi
             server.createContext("/api/upload", new UploadHandler(listener));
 
             server.setExecutor(null);
@@ -60,16 +56,12 @@ public class LocalServer {
         if (server != null) { server.stop(0); isRunning = false; }
     }
 
-    // ==============================================================
-    // HANDLERS ĐỒNG BỘ MẪU PHIẾU
-    // ==============================================================
     static class TemplatesHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             File dir = new File("data/templates");
             if (!dir.exists()) dir.mkdirs();
 
-            // Tự động đọc danh sách file ảnh có trong thư mục
             File[] files = dir.listFiles((d, name) -> name.endsWith(".jpg") || name.endsWith(".png"));
 
             StringBuilder json = new StringBuilder("[");
@@ -138,9 +130,6 @@ public class LocalServer {
         }
     }
 
-    // ==============================================================
-    // HANDLERS LỚP, ĐỀ THI & HỌC SINH
-    // ==============================================================
     static class ClassesHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -257,6 +246,10 @@ public class LocalServer {
 
             if (session != null && session.getConfig() != null && session.getConfig().getExamCodes() != null) {
                 java.util.List<String> codes = new java.util.ArrayList<>(session.getConfig().getExamCodes());
+
+                // [VÁ LỖI]: Bỏ qua chữ "Mặc định" để điện thoại không bao giờ nhìn thấy
+                codes.removeIf(c -> c == null || c.trim().isEmpty() || c.trim().equalsIgnoreCase("Mặc định") || c.trim().equalsIgnoreCase("Mặc định (Không mã)"));
+
                 for (int i = 0; i < codes.size(); i++) {
                     json.append("\"").append(codes.get(i)).append("\"");
                     if (i < codes.size() - 1) json.append(",");
@@ -288,9 +281,6 @@ public class LocalServer {
         }
     }
 
-    // ==============================================================
-    // HANDLER UPLOAD ẢNH BÀI LÀM
-    // ==============================================================
     static class UploadHandler implements HttpHandler {
         private ServerSyncListener listener;
         public UploadHandler(ServerSyncListener listener) { this.listener = listener; }
@@ -330,9 +320,6 @@ public class LocalServer {
         }
     }
 
-    // ==============================================================
-    // TIỆN ÍCH BỔ TRỢ
-    // ==============================================================
     private static Map<String, String> getQueryParams(HttpExchange exchange) {
         Map<String, String> result = new HashMap<>();
         String query = exchange.getRequestURI().getQuery();

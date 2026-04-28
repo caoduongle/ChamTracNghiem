@@ -8,7 +8,6 @@ import java.util.Set;
 public class ExamConfig implements Serializable {
     private static final long serialVersionUID = 2L;
 
-    // [CLEAN CODE] Đưa chuỗi lặp lại thành hằng số dùng chung
     public static final String DEFAULT_CODE = "Mặc định";
 
     private int numPart1, numPart2, numPart3;
@@ -17,9 +16,9 @@ public class ExamConfig implements Serializable {
     private Map<String, Map<String, String>> answersByCode = new HashMap<>();
     private String activeCode = DEFAULT_CODE;
 
-    // [BẢN VÁ] Bổ sung Constructor rỗng để an toàn khi Serialize/Deserialize và dùng cho OMRTest
+    // Khởi tạo mặc định
     public ExamConfig() {
-        this(40, 8, 6); // Gọi sang constructor bên dưới
+        this(40, 8, 6);
     }
 
     public ExamConfig(int p1, int p2, int p3) {
@@ -29,7 +28,7 @@ public class ExamConfig implements Serializable {
         addExamCode(DEFAULT_CODE);
     }
 
-    // [GETTERS/SETTERS] cho số lượng câu hỏi (Để OMRTest có thể gọi được)
+    // --- Quản lý Số lượng câu hỏi ---
     public int getNumPart1() { return numPart1; }
     public void setNumPart1(int numPart1) { this.numPart1 = numPart1; }
 
@@ -39,7 +38,7 @@ public class ExamConfig implements Serializable {
     public int getNumPart3() { return numPart3; }
     public void setNumPart3(int numPart3) { this.numPart3 = numPart3; }
 
-    // [GETTERS/SETTERS] cho điểm số
+    // --- Quản lý Điểm số ---
     public double getScoreP1() { return scoreP1; }
     public void setScoreP1(double s) { scoreP1 = s; }
 
@@ -58,8 +57,10 @@ public class ExamConfig implements Serializable {
     public double getScoreP3() { return scoreP3; }
     public void setScoreP3(double s) { scoreP3 = s; }
 
-    // [QUẢN LÝ ĐA MÃ ĐỀ]
-    public Set<String> getExamCodes() { return answersByCode.keySet(); }
+    // --- Quản lý Đa Mã Đề ---
+    public Set<String> getExamCodes() {
+        return answersByCode.keySet();
+    }
 
     public void addExamCode(String code) {
         if (code != null && !code.isEmpty()) {
@@ -68,10 +69,14 @@ public class ExamConfig implements Serializable {
     }
 
     public void removeExamCode(String code) {
-        if (!DEFAULT_CODE.equals(code)) answersByCode.remove(code);
+        if (!DEFAULT_CODE.equals(code)) {
+            answersByCode.remove(code);
+        }
     }
 
-    public String getActiveCode() { return activeCode; }
+    public String getActiveCode() {
+        return activeCode;
+    }
 
     public void setActiveCode(String code) {
         if (code != null && answersByCode.containsKey(code)) {
@@ -81,10 +86,12 @@ public class ExamConfig implements Serializable {
         }
     }
 
-    // [GET/SET ĐÁP ÁN THEO ACTIVE CODE]
+    // --- Quản lý Đáp án theo Mã Đề ---
     public void setAnswer(String questionId, String answer) {
         Map<String, String> currentAnswers = answersByCode.get(activeCode);
-        if (currentAnswers != null) currentAnswers.put(questionId, answer);
+        if (currentAnswers != null) {
+            currentAnswers.put(questionId, answer);
+        }
     }
 
     public String getAnswer(String questionId) {

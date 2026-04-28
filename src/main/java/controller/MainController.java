@@ -65,6 +65,57 @@ public class MainController {
         }
     }
 
+    private void registerPendingSubmission(String stt, String examCode, File imageFile) {
+        // 1. Gán file ảnh vào bộ đệm
+        assignedFiles.put(stt, imageFile);
+
+        // 2. Xử lý mã đề (Từ chối chữ Mặc định do điện thoại gửi nhầm)
+        boolean isDefaultCode = examCode == null || examCode.trim().isEmpty() ||
+                examCode.trim().equalsIgnoreCase("Mặc định") ||
+                examCode.trim().equalsIgnoreCase("Mặc định (Không mã)");
+
+        if (!isDefaultCode) {
+            studentExamCodes.put(stt, examCode.trim());
+            if (currentConfig != null && !currentConfig.getExamCodes().contains(examCode.trim())) {
+                currentConfig.getExamCodes().add(examCode.trim());
+                tableManager.updateExamCodeEditor(currentConfig.getExamCodes());
+            }
+        } else {
+            studentExamCodes.remove(stt);
+        }
+
+        // 3. Khởi tạo hoặc lấy kết quả cũ để ghi đè trạng thái
+        model.OMRModels.ExamReport report = reportDatabase.get(stt);
+        boolean isNew = false;
+        if (report == null) {
+            report = new model.OMRModels.ExamReport();
+            report.studentId = stt;
+            reportDatabase.put(stt, report);
+            isNew = true;
+        }
+
+        // 4. Cập nhật dữ liệu "Chờ chấm"
+        report.imagePath = imageFile.getAbsolutePath();
+        report.originalImagePath = imageFile.getAbsolutePath();
+
+        if (studentExamCodes.containsKey(stt)) {
+            report.examCode = studentExamCodes.get(stt);
+        } else {
+            report.examCode = null; // Rỗng mã đề nếu là Mặc định
+        }
+
+        // [ĐÃ SỬA]: Xóa bỏ dòng report.score = 0.0; gây lỗi ở đây!
+        report.statusMessage = "Chờ chấm...";
+
+        // 5. Lưu vĩnh viễn vào ổ cứng
+        if (currentSession != null) {
+            if (isNew && currentSession.getReports() != null) {
+                currentSession.getReports().add(report);
+            }
+            service.DataManager.saveSession(currentSession, currentClassRoom.className);
+        }
+    }
+
     private void startGlobalServer() {
         service.LocalServer.startServer(8080, new service.LocalServer.ServerSyncListener() {
             @Override
@@ -88,23 +139,8 @@ public class MainController {
                                 } catch(Exception e) {}
                             }
 
-                            assignedFiles.put(exactSttKey, new java.io.File(imagePath));
+                            registerPendingSubmission(exactSttKey, examCode, new java.io.File(imagePath));
 
-                            if (examCode != null && !examCode.trim().isEmpty()) {
-                                studentExamCodes.put(exactSttKey, examCode.trim());
-                                if (currentConfig != null && !currentConfig.getExamCodes().contains(examCode.trim())) {
-                                    currentConfig.getExamCodes().add(examCode.trim());
-                                    tableManager.updateExamCodeEditor(currentConfig.getExamCodes());
-                                }
-                            }
-
-                            reportDatabase.remove(exactSttKey);
-                            if (currentSession.getReports() != null) {
-                                final String finalExactKey = exactSttKey;
-                                currentSession.getReports().removeIf(r -> r.studentId != null && r.studentId.trim().equals(finalExactKey));
-                            }
-
-                            service.DataManager.saveSession(currentSession, currentClassRoom.className);
                             refreshTable();
                             view.setStatusMessage("📱 Đã nhận bài STT: " + exactSttKey + (examCode.isEmpty() ? "" : " (Mã: " + examCode + ")") + " - Chờ chấm...");
                         }
@@ -269,7 +305,7 @@ public class MainController {
                 int row = view.getTblResults().rowAtPoint(dropPoint);
                 if (row != -1) {
                     String stt = currentRowStts.get(row);
-                    assignedFiles.put(stt, validFiles.get(0));
+                    registerPendingSubmission(stt, null, validFiles.get(0));
                     refreshTable();
                     return;
                 }
@@ -279,7 +315,7 @@ public class MainController {
             for (File file : validFiles) {
                 String rawName = file.getName().substring(0, file.getName().lastIndexOf('.'));
                 if (currentRowStts.contains(rawName)) {
-                    assignedFiles.put(rawName, file);
+                    registerPendingSubmission(rawName, null, file);
                     autoCount++;
                 }
             }
@@ -330,7 +366,9 @@ public class MainController {
                         model.OMRModels.ExamReport report = reportDatabase.get(stt);
                         boolean hasData = (report != null || assignedFiles.containsKey(stt));
 
-                        itemDetail.setEnabled(report != null);
+                        boolean isWaiting = report != null && "Chờ chấm...".equals(report.statusMessage);
+
+                        itemDetail.setEnabled(report != null && !isWaiting);
                         itemDelete.setEnabled(hasData);
                         itemReassign.setText(hasData ? "📁 Gán lại ảnh khác" : "📁 Gán ảnh bài làm");
 
@@ -500,7 +538,7 @@ public class MainController {
                     "Tùy chọn thao tác", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
 
             if (choice == 0) {
-                if (report != null) {
+                if (report != null && !"Chờ chấm...".equals(report.statusMessage)) {
                     new WrongAnswerDialog(view, report, currentConfig, () -> {
                         refreshTable();
                         if (currentSession != null) {
@@ -578,7 +616,7 @@ public class MainController {
                 chooser.setDialogTitle("Chọn ảnh bài làm cho học sinh: " + name);
                 if (chooser.showOpenDialog(dropDialog) == JFileChooser.APPROVE_OPTION) {
                     prefs.put("DIR_IMAGES", chooser.getSelectedFile().getParent());
-                    assignedFiles.put(stt, chooser.getSelectedFile());
+                    registerPendingSubmission(stt, null, chooser.getSelectedFile());
                     refreshTable();
                     dropDialog.dispose();
                 }
@@ -586,7 +624,7 @@ public class MainController {
         });
 
         DragDropHandler.applyDropTarget(pnlDrop, (validFiles, dropPoint) -> {
-            assignedFiles.put(stt, validFiles.get(0));
+            registerPendingSubmission(stt, null, validFiles.get(0));
             refreshTable();
             dropDialog.dispose();
         });

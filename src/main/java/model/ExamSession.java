@@ -17,12 +17,27 @@ public class ExamSession implements Serializable {
         this.reports = new ArrayList<>();
     }
 
-    public String getExamName() { return examName; }
-    public void setExamName(String examName) { this.examName = examName; }
+    public String getExamName() {
+        return examName;
+    }
 
-    public ExamConfig getConfig() { return config; }
-    public void setConfig(ExamConfig config) { this.config = config; }
+    public void setExamName(String examName) {
+        this.examName = examName;
+    }
 
-    public List<model.OMRModels.ExamReport> getReports() { return reports; }
-    public void addReport(model.OMRModels.ExamReport report) { this.reports.add(report); }
+    public ExamConfig getConfig() {
+        return config;
+    }
+
+    public void setConfig(ExamConfig config) {
+        this.config = config;
+    }
+
+    public List<model.OMRModels.ExamReport> getReports() {
+        return reports;
+    }
+
+    public void addReport(model.OMRModels.ExamReport report) {
+        this.reports.add(report);
+    }
 }
