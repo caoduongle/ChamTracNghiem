@@ -29,7 +29,7 @@ public class LocalServer {
         try {
             server = HttpServer.create(new InetSocketAddress(port), 0);
 
-            // Các cổng giao tiếp
+            // API Quản lý lớp và học sinh
             server.createContext("/api/classes", new ClassesHandler());
             server.createContext("/api/create_class", new CreateClassHandler());
             server.createContext("/api/exams", new ExamsHandler());
@@ -63,6 +63,29 @@ public class LocalServer {
     // ==============================================================
     // HANDLERS ĐỒNG BỘ MẪU PHIẾU
     // ==============================================================
+    static class TemplatesHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            File dir = new File("data/templates");
+            if (!dir.exists()) dir.mkdirs();
+
+            // Tự động đọc danh sách file ảnh có trong thư mục
+            File[] files = dir.listFiles((d, name) -> name.endsWith(".jpg") || name.endsWith(".png"));
+
+            StringBuilder json = new StringBuilder("[");
+            if (files != null) {
+                for (int i = 0; i < files.length; i++) {
+                    String name = files[i].getName();
+                    String id = name.substring(0, name.lastIndexOf('.'));
+                    json.append("\"").append(id).append("\"");
+                    if (i < files.length - 1) json.append(",");
+                }
+            }
+            json.append("]");
+            sendResponse(exchange, 200, json.toString());
+        }
+    }
+
     static class CurrentTemplateHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -92,14 +115,6 @@ public class LocalServer {
         }
     }
 
-    static class TemplatesHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String json = "[\"BGD4\", \"BGD3\", \"QM\", \"TNMAKER\"]";
-            sendResponse(exchange, 200, json);
-        }
-    }
-
     static class TemplateImageHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -124,7 +139,7 @@ public class LocalServer {
     }
 
     // ==============================================================
-    // HANDLERS LỚP & HỌC SINH
+    // HANDLERS LỚP, ĐỀ THI & HỌC SINH
     // ==============================================================
     static class ClassesHandler implements HttpHandler {
         @Override
@@ -185,9 +200,6 @@ public class LocalServer {
         }
     }
 
-    // ==============================================================
-    // HANDLERS ĐỀ THI & MÃ ĐỀ
-    // ==============================================================
     static class ExamsHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {

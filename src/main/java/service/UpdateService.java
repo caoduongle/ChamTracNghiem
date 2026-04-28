@@ -13,15 +13,21 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class UpdateService {
     public static final String CURRENT_VERSION = "1.6.1"; // NHỚ ĐỔI SỐ NÀY TRƯỚC KHI XUẤT FILE MỚI
     private static final String VERSION_URL = "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/version.txt";
     private static final String DOWNLOAD_BASE_URL = "https://github.com/caoduongle/ChamTracNghiem/releases/download/v";
+    private static final String TEMPLATE_JSON_URL = "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/templates.json";
 
     private static final int NUM_THREADS = 4; // Tải 4 luồng cùng lúc
 
     public static void checkForUpdates(JFrame parentView) {
+        // [TỰ ĐỘNG]: Ngay khi check Update, nó sẽ tự động đồng bộ Mẫu phiếu ngầm
+        syncTemplatesFromServer();
+
         try {
             String noCacheUrl = VERSION_URL + "?t=" + System.currentTimeMillis();
             URL url = new URL(noCacheUrl);
@@ -35,13 +41,65 @@ public class UpdateService {
                         "Cập nhật phần mềm", JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
 
                 if (choice == JOptionPane.YES_OPTION) {
-                    // MỞ HỘP THOẠI DOWNLOAD TÙY CHỈNH THAY VÌ PROGRESS MONITOR
                     UpdateDialog dialog = new UpdateDialog(parentView, latestVersion);
                     dialog.setVisible(true);
                 }
             }
         } catch (Exception e) {
             System.out.println("Không thể kiểm tra bản cập nhật.");
+        }
+    }
+
+    // =====================================================================
+    // [ĐÃ TỐI ƯU]: ĐỒNG BỘ MẪU PHIẾU KHÔNG CẦN THƯ VIỆN ORG.JSON
+    // =====================================================================
+    public static void syncTemplatesFromServer() {
+        new Thread(() -> {
+            try {
+                URL url = new URL(TEMPLATE_JSON_URL + "?t=" + System.currentTimeMillis());
+                BufferedReader in = new BufferedReader(new InputStreamReader(url.openStream()));
+                StringBuilder content = new StringBuilder();
+                String line;
+                while ((line = in.readLine()) != null) content.append(line);
+                in.close();
+
+                File dir = new File("data/templates");
+                if (!dir.exists()) dir.mkdirs();
+
+                // Sử dụng Regex để tách lấy "id" và "url" từ chuỗi JSON đơn giản
+                String json = content.toString();
+                Pattern pId = Pattern.compile("\"id\"\\s*:\\s*\"([^\"]+)\"");
+                Pattern pUrl = Pattern.compile("\"url\"\\s*:\\s*\"([^\"]+)\"");
+
+                String[] blocks = json.split("\\}");
+                for (String block : blocks) {
+                    Matcher mId = pId.matcher(block);
+                    Matcher mUrl = pUrl.matcher(block);
+
+                    if (mId.find() && mUrl.find()) {
+                        String id = mId.group(1);
+                        String downloadUrl = mUrl.group(2);
+                        File localFile = new File(dir, id + ".jpg");
+
+                        if (!localFile.exists()) {
+                            System.out.println("🚚 Đang tải mẫu phiếu mới từ Server: " + id);
+                            downloadFile(downloadUrl, localFile);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Không thể đồng bộ mẫu phiếu từ GitHub: " + e.getMessage());
+            }
+        }).start();
+    }
+
+    private static void downloadFile(String urlStr, File targetFile) throws IOException {
+        URL url = new URL(urlStr);
+        try (InputStream in = url.openStream();
+             FileOutputStream out = new FileOutputStream(targetFile)) {
+            byte[] buffer = new byte[8192];
+            int n;
+            while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
         }
     }
 
@@ -114,7 +172,7 @@ public class UpdateService {
             setSize(450, 180);
             setLocationRelativeTo(parent);
             setLayout(new BorderLayout(10, 10));
-            setDefaultCloseOperation(DO_NOTHING_ON_CLOSE); // Ngăn ấn dấu X để tránh lỗi file
+            setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
 
             JPanel pnlCenter = new JPanel(new GridLayout(2, 1, 5, 5));
             pnlCenter.setBorder(BorderFactory.createEmptyBorder(15, 15, 5, 15));
@@ -145,27 +203,22 @@ public class UpdateService {
             pnlBottom.add(pnlBtns, BorderLayout.EAST);
             add(pnlBottom, BorderLayout.SOUTH);
 
-            // Sự kiện Tạm dừng / Tiếp tục
             btnPauseResume.addActionListener(e -> {
                 if (isDownloading) {
-                    // Xử lý Dừng
-                    btnPauseResume.setEnabled(false); // Khóa nút tạm thời chờ tắt luồng
+                    btnPauseResume.setEnabled(false);
                     btnPauseResume.setText("Đang dừng...");
                     if (currentWorker != null) currentWorker.cancel(true);
                 } else {
-                    // Xử lý Tiếp tục
                     btnPauseResume.setText("⏸ Tạm dừng");
                     startDownloadWorker();
                 }
             });
 
-            // Sự kiện Hủy bỏ
             btnCancel.addActionListener(e -> {
                 if (currentWorker != null) currentWorker.cancel(true);
                 dispose();
             });
 
-            // Chặn nút X góc phải màn hình
             addWindowListener(new WindowAdapter() {
                 @Override
                 public void windowClosing(WindowEvent e) {
@@ -173,28 +226,23 @@ public class UpdateService {
                 }
             });
 
-            // Bắt đầu tải ngay khi mở hộp thoại
             startDownloadWorker();
         }
 
         private void startDownloadWorker() {
             isDownloading = true;
             btnPauseResume.setEnabled(true);
-            cleanOldPartFiles(version); // Xóa rác của bản cũ khác nếu có
+            cleanOldPartFiles(version);
             currentWorker = new DownloadWorker();
             currentWorker.execute();
         }
 
-        // =====================================================================
-        // LUỒNG QUẢN LÝ TẢI ĐA LUỒNG (SWING WORKER)
-        // =====================================================================
         private class DownloadWorker extends SwingWorker<Void, Long> {
             private List<DownloadTask> tasks = new ArrayList<>();
             private ExecutorService executor;
 
             @Override
             protected Void doInBackground() throws Exception {
-                // 1. Lấy dung lượng file (Chỉ lấy 1 lần)
                 if (totalBytes == 0) {
                     String initialUrl = DOWNLOAD_BASE_URL + version + "/PhanMemChamThi_v" + version + ".exe";
                     finalUrl = getFinalUrl(initialUrl);
@@ -209,7 +257,6 @@ public class UpdateService {
                 executor = Executors.newFixedThreadPool(NUM_THREADS);
                 List<Future<?>> futures = new ArrayList<>();
 
-                // Khởi tạo các luồng tải
                 for (int i = 0; i < NUM_THREADS; i++) {
                     long startByte = i * chunkSize;
                     long endByte = (i == NUM_THREADS - 1) ? totalBytes - 1 : (startByte + chunkSize - 1);
@@ -218,7 +265,6 @@ public class UpdateService {
                     futures.add(executor.submit(task));
                 }
 
-                // Vòng lặp giám sát
                 while (!executor.isTerminated()) {
                     if (isCancelled()) {
                         for (DownloadTask task : tasks) task.cancel();
@@ -238,12 +284,11 @@ public class UpdateService {
 
                 executor.shutdown();
 
-                // Nếu tải hoàn tất 100% và không bị người dùng bấm Dừng/Hủy
                 if (!isCancelled()) {
                     publish(totalBytes);
                     SwingUtilities.invokeLater(() -> {
                         lblStatus.setText("Đang gộp file... Vui lòng chờ!");
-                        progressBar.setIndeterminate(true); // Hiệu ứng chờ gộp file
+                        progressBar.setIndeterminate(true);
                         btnPauseResume.setEnabled(false);
                         btnCancel.setEnabled(false);
                     });
@@ -268,17 +313,14 @@ public class UpdateService {
             protected void done() {
                 try {
                     if (isCancelled()) {
-                        // Trạng thái PAUSE (Tạm dừng)
                         isDownloading = false;
                         lblStatus.setText("Đã tạm dừng.");
                         btnPauseResume.setText("▶ Tiếp tục");
                         btnPauseResume.setEnabled(true);
                         return;
                     }
+                    get();
 
-                    get(); // Kiểm tra lỗi nếu có
-
-                    // Trạng thái COMPLETE (Hoàn thành)
                     JOptionPane.showMessageDialog(UpdateDialog.this,
                             "Tải bản cập nhật hoàn tất!\nPhần mềm sẽ tự động tắt và khởi động lại ngay bây giờ.",
                             "Thành công", JOptionPane.INFORMATION_MESSAGE);
@@ -287,7 +329,6 @@ public class UpdateService {
 
                 } catch (Exception ex) {
                     JOptionPane.showMessageDialog(UpdateDialog.this, "Lỗi kết nối mạng:\n" + ex.getMessage(), "Lỗi tải xuống", JOptionPane.ERROR_MESSAGE);
-                    // Lỗi mạng thì chuyển về chế độ cho phép tải lại
                     isDownloading = false;
                     lblStatus.setText("Lỗi mạng. Bấm Tiếp tục để thử lại.");
                     btnPauseResume.setText("▶ Tiếp tục");
@@ -297,9 +338,6 @@ public class UpdateService {
         }
     }
 
-    // =========================================================================
-    // LỚP NHIỆM VỤ: TẢI 1 MẢNH CỦA FILE (HỖ TRỢ RESUME)
-    // =========================================================================
     private static class DownloadTask implements Runnable {
         private int partId;
         private long startByte, endByte;
@@ -326,7 +364,7 @@ public class UpdateService {
                 totalTracker.addAndGet(downloadedHere);
 
                 long actualStart = startByte + downloadedHere;
-                if (actualStart > endByte) return; // Mảnh này đã tải xong 100%
+                if (actualStart > endByte) return;
 
                 HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
                 conn.setRequestProperty("Range", "bytes=" + actualStart + "-" + endByte);
@@ -339,14 +377,12 @@ public class UpdateService {
                     byte[] buffer = new byte[65536];
                     int bytesRead;
                     while ((bytesRead = in.read(buffer)) != -1) {
-                        if (isCancelled) break; // Thoát ngay lập tức nếu người dùng bấm Tạm dừng
+                        if (isCancelled) break;
                         fos.write(buffer, 0, bytesRead);
                         totalTracker.addAndGet(bytesRead);
                     }
                 }
-            } catch (Exception e) {
-                // Rớt mạng cục bộ tại Thread này, nó sẽ âm thầm chết và chờ lần chạy sau tải lại
-            }
+            } catch (Exception e) {}
         }
     }
 
@@ -362,7 +398,7 @@ public class UpdateService {
                     int len;
                     while ((len = fis.read(buffer)) > 0) fos.write(buffer, 0, len);
                 }
-                partFile.delete(); // Nối xong xóa luôn mảnh tạm
+                partFile.delete();
             }
         }
     }
