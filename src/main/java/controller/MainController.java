@@ -36,6 +36,7 @@ import view.ClassManagementDialog;
 import view.MainView;
 import view.StartupDialog;
 import view.WrongAnswerDialog;
+import view.DashboardDialog;
 
 public class MainController {
     private MainView view;
@@ -54,7 +55,6 @@ public class MainController {
         this.view = view;
         this.tableManager = new ResultTableManager(view);
 
-        // [QUAN TRỌNG]: Bật Server ngay khi mở PC để Điện thoại kết nối lúc nào cũng được
         startGlobalServer();
 
         initController();
@@ -66,20 +66,73 @@ public class MainController {
     }
 
     private void startGlobalServer() {
-        service.LocalServer.startServer(8080, (className, examName, stt, templateId, imagePath) -> {
-            SwingUtilities.invokeLater(() -> {
-                // Chỉ nạp ảnh vào Bảng nếu Màn hình PC ĐANG MỞ đúng Lớp đó và đúng Đề đó
-                if (currentClassRoom != null && currentClassRoom.className.equals(className)
-                        && currentSession != null && currentSession.getExamName().equals(examName)) {
+        // [MỚI]: Khai báo Interface đồng bộ 2 chiều
+        service.LocalServer.startServer(8080, new service.LocalServer.ServerSyncListener() {
+            @Override
+            public void onImageReceived(String className, String examName, String stt, String templateId, String examCode, String imagePath) {
+                SwingUtilities.invokeLater(() -> {
+                    try {
+                        boolean isClassMatch = currentClassRoom != null && currentClassRoom.className.trim().equalsIgnoreCase(className.trim());
+                        boolean isExamMatch = currentSession != null && currentSession.getExamName().trim().equalsIgnoreCase(examName.trim());
 
-                    assignedFiles.put(stt, new java.io.File(imagePath));
-                    refreshTable();
-                    view.setStatusMessage("📱 App vừa gửi bài của STT: " + stt + " (Mẫu: " + templateId + ")");
-                }
-            });
+                        if (isClassMatch && isExamMatch) {
+                            String cleanStt = stt.trim();
+                            int incomingStt = -1;
+                            try { incomingStt = Integer.parseInt(cleanStt); } catch(Exception e) {}
+
+                            String exactSttKey = cleanStt;
+                            for (String rowStt : currentRowStts) {
+                                try {
+                                    if (incomingStt != -1 && Integer.parseInt(rowStt.trim()) == incomingStt) {
+                                        exactSttKey = rowStt; break;
+                                    }
+                                } catch(Exception e) {}
+                            }
+
+                            assignedFiles.put(exactSttKey, new java.io.File(imagePath));
+
+                            if (examCode != null && !examCode.trim().isEmpty()) {
+                                studentExamCodes.put(exactSttKey, examCode.trim());
+                                if (currentConfig != null && !currentConfig.getExamCodes().contains(examCode.trim())) {
+                                    currentConfig.getExamCodes().add(examCode.trim());
+                                    tableManager.updateExamCodeEditor(currentConfig.getExamCodes());
+                                }
+                            }
+
+                            reportDatabase.remove(exactSttKey);
+                            if (currentSession.getReports() != null) {
+                                final String finalExactKey = exactSttKey;
+                                currentSession.getReports().removeIf(r -> r.studentId != null && r.studentId.trim().equals(finalExactKey));
+                            }
+
+                            service.DataManager.saveSession(currentSession, currentClassRoom.className);
+                            refreshTable();
+                            view.setStatusMessage("📱 Đã nhận bài STT: " + exactSttKey + (examCode.isEmpty() ? "" : " (Mã: " + examCode + ")") + " - Chờ chấm...");
+                        }
+                    } catch (Exception ex) { ex.printStackTrace(); }
+                });
+            }
+
+            @Override
+            public void onTemplateChanged(String className, String examName, String newTemplateId) {
+                // Sự kiện khi App Điện thoại bấm chọn mẫu mới -> Cập nhật PC
+                SwingUtilities.invokeLater(() -> {
+                    try {
+                        boolean isClassMatch = currentClassRoom != null && currentClassRoom.className.trim().equalsIgnoreCase(className.trim());
+                        boolean isExamMatch = currentSession != null && currentSession.getExamName().trim().equalsIgnoreCase(examName.trim());
+
+                        if (isClassMatch && isExamMatch) {
+                            view.getCbxTemplate().setSelectedItem(newTemplateId);
+                            view.setStatusMessage("🔄 Điện thoại vừa chọn mẫu phiếu: " + newTemplateId);
+                        }
+                    } catch (Exception ex) { ex.printStackTrace(); }
+                });
+            }
         });
+
+        view.setTitle("Phần mềm Chấm Thi | 📡 IP: " + service.LocalServer.getLocalIP() + ":8080");
         view.getLblServerStatus().setText("📡 Server: Online (" + service.LocalServer.getLocalIP() + ":8080)");
-        view.getLblServerStatus().setForeground(new Color(0, 150, 0)); // Màu xanh
+        view.getLblServerStatus().setForeground(new Color(0, 150, 0));
     }
 
     public void initApp() {
@@ -117,7 +170,8 @@ public class MainController {
                 currentSession = DataManager.loadSession(startup.getSelectedExam(), currentClassRoom.className);
                 if (currentSession != null) this.currentConfig = currentSession.getConfig();
             }
-            view.setTitle("Phần mềm Chấm Thi | Lớp: " + currentClassRoom.className + " | Đề: " + currentSession.getExamName());
+
+            view.setTitle("Chấm Thi | Lớp: " + currentClassRoom.className + " | Đề: " + currentSession.getExamName() + " | 📡 IP: " + service.LocalServer.getLocalIP() + ":8080");
             view.setVisible(true);
             loadSessionToUI();
         } else {
@@ -140,6 +194,14 @@ public class MainController {
         if (currentConfig != null && currentConfig.getExamCodes() != null) {
             tableManager.updateExamCodeEditor(currentConfig.getExamCodes());
         }
+
+        // [MỚI]: Tự động load Mẫu Phiếu đã chọn từ bộ nhớ cục bộ
+        if (currentClassRoom != null && currentSession != null) {
+            String savedTemp = Preferences.userRoot().node("ChamTracNghiem_N7")
+                    .get("TEMPLATE_" + currentClassRoom.className + "_" + currentSession.getExamName(), "BGD4");
+            view.getCbxTemplate().setSelectedItem(savedTemp);
+        }
+
         refreshTable();
     }
 
@@ -151,6 +213,15 @@ public class MainController {
         view.setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
 
         view.getBtnConnectPhone().addActionListener(e -> showConnectionDialog());
+
+        // [MỚI]: Khi PC đổi Mẫu Phiếu -> Lưu lại để App tải về
+        view.getCbxTemplate().addActionListener(e -> {
+            if (currentClassRoom != null && currentSession != null) {
+                String selected = (String) view.getCbxTemplate().getSelectedItem();
+                Preferences.userRoot().node("ChamTracNghiem_N7")
+                        .put("TEMPLATE_" + currentClassRoom.className + "_" + currentSession.getExamName(), selected);
+            }
+        });
 
         view.getTblResults().getModel().addTableModelListener(e -> {
             if (e.getColumn() == 3) {
@@ -182,7 +253,6 @@ public class MainController {
                 this.currentSession = null;
                 this.reportDatabase.clear();
                 this.assignedFiles.clear();
-                // [LƯU Ý]: KHÔNG ĐƯỢC TẮT SERVER Ở ĐÂY NỮA
                 showStartupMenu(false);
             }
         });

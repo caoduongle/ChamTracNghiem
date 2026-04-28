@@ -10,12 +10,13 @@ public class MainView extends JFrame {
     private JButton btnConnectPhone;
     private JButton btnBackToMenu;
     private JButton btnSetAnswerKey;
+    private JComboBox<String> cbxTemplate; // [MỚI]: Ô chọn Mẫu phiếu trên PC
     private JButton btnStartGrading;
     private JButton btnStopGrading;
     private JTable tblResults;
     private DefaultTableModel tableModel;
     private JLabel lblStatus;
-    private JLabel lblServerStatus; // [MỚI]
+    private JLabel lblServerStatus;
     private JButton btnDeleteResult;
     private JComboBox<String> cbxSortResults;
     private JButton btnExportScores, btnExportConfig;
@@ -43,6 +44,9 @@ public class MainView extends JFrame {
 
         btnBackToMenu = new JButton("⬅ Trở về Menu");
         btnSetAnswerKey = new JButton("1. Cài đặt đáp án");
+
+        // [MỚI]: Khởi tạo danh sách mẫu phiếu
+        cbxTemplate = new JComboBox<>(new String[]{"BGD4", "BGD3", "QM", "TNMAKER"});
 
         btnConnectPhone = new JButton("📱 Kết nối Điện thoại");
         btnConnectPhone.setBackground(new Color(0, 123, 255));
@@ -78,6 +82,9 @@ public class MainView extends JFrame {
         addButton(panelLeft, btnBackToMenu);
         addButton(panelLeft, btnSetAnswerKey);
 
+        addSectionLabel(panelLeft, "MẪU PHIẾU CHẤM");
+        addComboBox(panelLeft, cbxTemplate);
+
         addSectionLabel(panelLeft, "CHẤM BÀI TRÊN PC");
         addButton(panelLeft, btnStartGrading);
         addButton(panelLeft, btnStopGrading);
@@ -99,7 +106,6 @@ public class MainView extends JFrame {
         scrollLeft.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         scrollLeft.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         scrollLeft.setBorder(BorderFactory.createTitledBorder("Thanh Công Cụ"));
-
         scrollLeft.setMinimumSize(new Dimension(240, 0));
         scrollLeft.setPreferredSize(new Dimension(260, 0));
 
@@ -107,7 +113,7 @@ public class MainView extends JFrame {
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return column == 2;
+                return column == 3;
             }
         };
         tblResults = new JTable(tableModel);
@@ -126,20 +132,19 @@ public class MainView extends JFrame {
 
         add(splitPane, BorderLayout.CENTER);
 
-        // --- THANH TRẠNG THÁI DƯỚI CÙNG ---
         JPanel panelStatus = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        lblStatus = new JLabel("Trạng thái: Sẵn sàng");
 
         lblServerStatus = new JLabel("📡 Server: Offline");
         lblServerStatus.setForeground(Color.RED);
 
+        lblStatus = new JLabel("Trạng thái: Sẵn sàng");
         progressBar = new JProgressBar(0, 100);
         progressBar.setStringPainted(true);
         progressBar.setPreferredSize(new Dimension(300, 20));
         progressBar.setVisible(false);
 
         panelStatus.add(lblServerStatus);
-        panelStatus.add(Box.createHorizontalStrut(20));
+        panelStatus.add(Box.createHorizontalStrut(15));
         panelStatus.add(lblStatus);
         panelStatus.add(Box.createHorizontalStrut(20));
         panelStatus.add(progressBar);
@@ -175,6 +180,7 @@ public class MainView extends JFrame {
     public JButton getBtnConnectPhone() { return btnConnectPhone; }
     public JButton getBtnBackToMenu() { return btnBackToMenu; }
     public JButton getBtnSetAnswerKey() { return btnSetAnswerKey; }
+    public JComboBox<String> getCbxTemplate() { return cbxTemplate; } // Getter mới
     public JButton getBtnStartGrading() { return btnStartGrading; }
     public JButton getBtnStopGrading() { return btnStopGrading; }
     public JTable getTblResults() { return tblResults; }
@@ -188,7 +194,6 @@ public class MainView extends JFrame {
     public JButton getBtnChangeSelectedCode() { return btnChangeSelectedCode; }
     public JLabel getLblServerStatus() { return lblServerStatus; }
 
-    public void setImagePreview(Icon imageIcon) {}
     public void addResultRow(Object[] rowData) { tableModel.addRow(rowData); }
     public void setStatusMessage(String message) { lblStatus.setText("Trạng thái: " + message); }
 
