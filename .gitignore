@@ -50,6 +50,8 @@ data/images/
 
 # Chỉ giữ lại ảnh hướng dẫn
 !data/tutorial/
+!data/templates/
+
 
 ### Custom App Files ###
 *.log

@@ -28,6 +28,10 @@ public class MainView extends JFrame {
 
     public MainView() {
         setTitle("Phần mềm Chấm Trắc Nghiệm");
+        try {
+            ImageIcon appIcon = new ImageIcon("icon.jpg");
+            setIconImage(appIcon.getImage());
+        } catch (Exception e) { e.printStackTrace(); }
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout(10, 10));
 

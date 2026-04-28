@@ -13,19 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.prefs.Preferences;
 
-import javax.swing.BorderFactory;
-import javax.swing.JButton;
-import javax.swing.JDialog;
-import javax.swing.JFileChooser;
-import javax.swing.JLabel;
-import javax.swing.JMenuItem;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JPopupMenu;
-import javax.swing.JTable;
-import javax.swing.SwingConstants;
-import javax.swing.SwingUtilities;
-import javax.swing.SwingWorker;
+import javax.swing.*;
 
 import model.ClassRoom;
 import model.ExamConfig;
@@ -65,11 +53,12 @@ public class MainController {
         }
     }
 
+    // =========================================================================
+    // [ĐÃ FIX LỖI]: registerPendingSubmission hoàn chỉnh, không còn lỗi 'score'
+    // =========================================================================
     private void registerPendingSubmission(String stt, String examCode, File imageFile) {
-        // 1. Gán file ảnh vào bộ đệm
         assignedFiles.put(stt, imageFile);
 
-        // 2. Xử lý mã đề (Từ chối chữ Mặc định do điện thoại gửi nhầm)
         boolean isDefaultCode = examCode == null || examCode.trim().isEmpty() ||
                 examCode.trim().equalsIgnoreCase("Mặc định") ||
                 examCode.trim().equalsIgnoreCase("Mặc định (Không mã)");
@@ -84,7 +73,6 @@ public class MainController {
             studentExamCodes.remove(stt);
         }
 
-        // 3. Khởi tạo hoặc lấy kết quả cũ để ghi đè trạng thái
         model.OMRModels.ExamReport report = reportDatabase.get(stt);
         boolean isNew = false;
         if (report == null) {
@@ -94,20 +82,18 @@ public class MainController {
             isNew = true;
         }
 
-        // 4. Cập nhật dữ liệu "Chờ chấm"
         report.imagePath = imageFile.getAbsolutePath();
         report.originalImagePath = imageFile.getAbsolutePath();
 
         if (studentExamCodes.containsKey(stt)) {
             report.examCode = studentExamCodes.get(stt);
         } else {
-            report.examCode = null; // Rỗng mã đề nếu là Mặc định
+            report.examCode = null;
         }
 
-        // [ĐÃ SỬA]: Xóa bỏ dòng report.score = 0.0; gây lỗi ở đây!
+        // Trạng thái chờ chấm, không cần gán biến score gây lỗi
         report.statusMessage = "Chờ chấm...";
 
-        // 5. Lưu vĩnh viễn vào ổ cứng
         if (currentSession != null) {
             if (isNew && currentSession.getReports() != null) {
                 currentSession.getReports().add(report);
@@ -140,9 +126,8 @@ public class MainController {
                             }
 
                             registerPendingSubmission(exactSttKey, examCode, new java.io.File(imagePath));
-
                             refreshTable();
-                            view.setStatusMessage("📱 Đã nhận bài STT: " + exactSttKey + (examCode.isEmpty() ? "" : " (Mã: " + examCode + ")") + " - Chờ chấm...");
+                            view.setStatusMessage("📱 Đã nhận bài STT: " + exactSttKey + " - Chờ chấm...");
                         }
                     } catch (Exception ex) { ex.printStackTrace(); }
                 });
@@ -154,7 +139,6 @@ public class MainController {
                     try {
                         boolean isClassMatch = currentClassRoom != null && currentClassRoom.className.trim().equalsIgnoreCase(className.trim());
                         boolean isExamMatch = currentSession != null && currentSession.getExamName().trim().equalsIgnoreCase(examName.trim());
-
                         if (isClassMatch && isExamMatch) {
                             view.getCbxTemplate().setSelectedItem(newTemplateId);
                             view.setStatusMessage("🔄 Điện thoại vừa chọn mẫu phiếu: " + newTemplateId);
@@ -213,14 +197,29 @@ public class MainController {
         }
     }
 
+    // =========================================================================
+    // [ĐÃ SỬA]: Tự động nạp lại ảnh đã có từ file dữ liệu cũ lên Bảng
+    // =========================================================================
     private void loadSessionToUI() {
         if (currentSession != null && currentSession.getReports() != null) {
             studentExamCodes.clear();
+            assignedFiles.clear(); // Xóa bộ đệm cũ
 
             for (model.OMRModels.ExamReport report : currentSession.getReports()) {
                 reportDatabase.put(report.studentId, report);
+
+                // Nạp mã đề
                 if (report.examCode != null) {
                     studentExamCodes.put(report.studentId, report.examCode);
+                }
+
+                // [QUAN TRỌNG]: Tìm và gán lại file ảnh từ dữ liệu cũ để không phải nạp lại
+                String path = (report.imagePath != null) ? report.imagePath : report.originalImagePath;
+                if (path != null) {
+                    File imgFile = new File(path);
+                    if (imgFile.exists()) {
+                        assignedFiles.put(report.studentId, imgFile);
+                    }
                 }
             }
         }
@@ -665,30 +664,25 @@ public class MainController {
             view.getTblResults().getCellEditor().stopCellEditing();
         }
 
-        boolean hasOldImagesLoaded = false;
+        // Tự động quét lại và nạp ảnh cũ vào assignedFiles trước khi bắt đầu chấm
         for (model.ClassRoom.Student student : currentClassRoom.students) {
             String stt = String.valueOf(student.stt);
-
             if (!assignedFiles.containsKey(stt) && reportDatabase.containsKey(stt)) {
                 model.OMRModels.ExamReport report = reportDatabase.get(stt);
                 String path = (report.imagePath != null) ? report.imagePath : report.originalImagePath;
-
                 if (path != null) {
                     File existingFile = new File(path);
                     if (existingFile.exists()) {
                         assignedFiles.put(stt, existingFile);
-                        hasOldImagesLoaded = true;
                     }
                 }
             }
         }
 
         if (assignedFiles.isEmpty()) {
-            JOptionPane.showMessageDialog(view, "Chưa có ảnh nào được gán (mới hoặc cũ)! Hãy gán ảnh bài làm trước khi chấm.", "Thiếu thông tin", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(view, "Chưa có ảnh nào được gán! Hãy gán ảnh bài làm trước khi chấm.", "Thiếu thông tin", JOptionPane.WARNING_MESSAGE);
             return;
         }
-
-        if (hasOldImagesLoaded) refreshTable();
 
         if (currentConfig == null) {
             JOptionPane.showMessageDialog(view, "Vui lòng cài đặt đáp án trước khi chấm!", "Thiếu thông tin", JOptionPane.WARNING_MESSAGE);
@@ -707,20 +701,52 @@ public class MainController {
         String myIP = service.LocalServer.getLocalIP();
         String connectionURL = "http://" + myIP + ":8080";
 
-        JDialog dialog = new JDialog(view, "Kết nối với App Điện thoại", true);
-        dialog.setLayout(new BorderLayout(10, 10));
+        // [MỚI]: Đường dẫn tải file APK trực tiếp từ GitHub của bạn
+        // Lưu ý: Đảm bảo đường link này luôn trỏ đến file apk mới nhất, hoặc link release chung.
+        String downloadURL = "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/app-release.apk";
 
-        JLabel lblInstruction = new JLabel("<html><center>Mở App trên điện thoại và quét mã này để kết nối<br><b>" + connectionURL + "</b></center></html>", SwingConstants.CENTER);
-        lblInstruction.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        JDialog dialog = new JDialog(view, "Kết nối & Cài đặt Ứng dụng", true);
+        dialog.setLayout(new BorderLayout());
 
-        JLabel lblQR = new JLabel(service.QRService.generateQRCode(connectionURL, 300, 300));
+        // Sử dụng JTabbedPane để tạo 2 thẻ (Tabs)
+        JTabbedPane tabbedPane = new JTabbedPane();
+        tabbedPane.setFont(new Font("Arial", Font.BOLD, 13));
 
-        JButton btnClose = new JButton("Đóng");
+        // ==========================================
+        // TAB 1: KẾT NỐI (Cho máy đã có App)
+        // ==========================================
+        JPanel pnlConnect = new JPanel(new BorderLayout(10, 10));
+        pnlConnect.setBackground(Color.WHITE);
+        JLabel lblInstruction1 = new JLabel("<html><center><font size='4'>Mở App trên điện thoại và quét mã này để kết nối</font><br><b style='color:#007BFF;'>" + connectionURL + "</b></center></html>", SwingConstants.CENTER);
+        lblInstruction1.setBorder(BorderFactory.createEmptyBorder(15, 10, 5, 10));
+        JLabel lblQR1 = new JLabel(service.QRService.generateQRCode(connectionURL, 300, 300));
+        pnlConnect.add(lblInstruction1, BorderLayout.NORTH);
+        pnlConnect.add(lblQR1, BorderLayout.CENTER);
+
+        // ==========================================
+        // TAB 2: TẢI APP (Cho máy chưa có App)
+        // ==========================================
+        JPanel pnlDownload = new JPanel(new BorderLayout(10, 10));
+        pnlDownload.setBackground(new Color(245, 250, 255)); // Màu nền hơi xanh nhạt cho khác biệt
+        JLabel lblInstruction2 = new JLabel("<html><center><font size='4'>Chưa có App? Dùng <b>Zalo</b> hoặc <b>Camera</b> quét mã này</font><br><span style='color:#28A745;'>để tải và cài đặt ứng dụng lần đầu tiên</span></center></html>", SwingConstants.CENTER);
+        lblInstruction2.setBorder(BorderFactory.createEmptyBorder(15, 10, 5, 10));
+        JLabel lblQR2 = new JLabel(service.QRService.generateQRCode(downloadURL, 300, 300));
+        pnlDownload.add(lblInstruction2, BorderLayout.NORTH);
+        pnlDownload.add(lblQR2, BorderLayout.CENTER);
+
+        // Thêm 2 Tab vào hộp thoại
+        tabbedPane.addTab("🔗 Quét mã Kết nối", pnlConnect);
+        tabbedPane.addTab("📥 Quét để Tải App mới", pnlDownload);
+
+        // Nút Đóng
+        JPanel pnlBottom = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        JButton btnClose = new JButton("Đóng hộp thoại");
+        btnClose.setFont(new Font("Arial", Font.BOLD, 13));
         btnClose.addActionListener(e -> dialog.dispose());
+        pnlBottom.add(btnClose);
 
-        dialog.add(lblInstruction, BorderLayout.NORTH);
-        dialog.add(lblQR, BorderLayout.CENTER);
-        dialog.add(btnClose, BorderLayout.SOUTH);
+        dialog.add(tabbedPane, BorderLayout.CENTER);
+        dialog.add(pnlBottom, BorderLayout.SOUTH);
 
         dialog.pack();
         dialog.setLocationRelativeTo(view);
