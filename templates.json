@@ -1,10 +1,23 @@
 [
   {
     "id": "BGD4",
-    "url": "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/templates/BGD4.jpg"
+    "url": "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/data/templates/BGD4.jpg"
   },
   {
     "id": "QM",
-    "url": "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/templates/QM.jpg"
+    "url": "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/data/templates/QM.jpg"
+  },
+  {
+    "id": "BGD4.1",
+    "url": "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/data/templates/BGD4.1.jpg"
+  },
+  {
+    "id": "TNMAKER",
+    "url": "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/data/templates/TNMAKER.jpg"
+  },
+  {
+    "id": "BGD3",
+    "url": "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/data/templates/BGD3.jpg"
   }
+
 ]

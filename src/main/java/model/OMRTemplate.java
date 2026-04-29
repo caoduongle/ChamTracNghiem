@@ -1,33 +1,21 @@
 package model;
 
-import org.opencv.core.Rect;
+import java.util.ArrayList;
+import java.util.List;
 
 public class OMRTemplate {
     public String templateName;
-    public int warpedWidth = 1200;
-    public int warpedHeight = 1600;
+    public List<AnchorZone> anchorZones = new ArrayList<>(); // Danh sách hành lang
 
-    // Tọa độ Vùng SBD, Mã Đề
-    public Rect roiSBD;
-    public Rect roiMaDe;
+    // Danh sách các khung (Boxes) chứa đáp án của từng phần
+    public List<RelativePart> part1Boxes = new ArrayList<>();
+    public int p1ExpectedRows = 10;
 
-    // Cấu hình Phần 1
-    public Rect roiPart1;
-    public int p1ExpectedRows;
-    public int[] p1ColXs;
-    public int p1ColWidth;
+    public List<RelativePart> part2Boxes = new ArrayList<>();
+    public int p2ExpectedRows = 4;
 
-    // Cấu hình Phần 2
-    public Rect roiPart2;
-    public int p2ExpectedRows;
-    public int[] p2ColXs;
-    public int p2ColWidth;
-
-    // Cấu hình Phần 3
-    public Rect roiPart3;
-    public int p3ExpectedRows;
-    public int[] p3ColXs;
-    public int p3ColWidth;
+    public List<RelativePart> part3Boxes = new ArrayList<>();
+    public int p3ExpectedRows = 12;
 
     public OMRTemplate(String name) {
         this.templateName = name;

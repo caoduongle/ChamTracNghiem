@@ -232,18 +232,42 @@ public class StartupDialog extends JDialog {
     }
 
     private void showConnectionDialog() {
-        String myIP = service.LocalServer.getLocalIP();
-        String connectionURL = "http://" + myIP + ":8080";
-        JDialog dialog = new JDialog(this, "Kết nối với App Điện thoại", true);
-        dialog.setLayout(new BorderLayout(10, 10));
-        JLabel lblInstruction = new JLabel("<html><center>Mở App trên điện thoại và quét mã này để kết nối<br><b>" + connectionURL + "</b></center></html>", SwingConstants.CENTER);
-        lblInstruction.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        JLabel lblQR = new JLabel(service.QRService.generateQRCode(connectionURL, 300, 300));
-        JButton btnClose = new JButton("Đóng");
+        String connectionURL = "http://" + service.LocalServer.getLocalIP() + ":8080";
+        String downloadURL = "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/app-release.apk";
+
+        JDialog dialog = new JDialog(this, "Kết nối & Cài đặt Ứng dụng", true);
+        dialog.setLayout(new BorderLayout());
+
+        JTabbedPane tabbedPane = new JTabbedPane();
+        tabbedPane.setFont(new Font("Arial", Font.BOLD, 13));
+
+        JPanel pnlConnect = new JPanel(new BorderLayout(10, 10));
+        pnlConnect.setBackground(Color.WHITE);
+        JLabel lblInstruction1 = new JLabel("<html><center><font size='4'>Mở App trên điện thoại và quét mã này để kết nối</font><br><b style='color:#007BFF;'>" + connectionURL + "</b></center></html>", SwingConstants.CENTER);
+        lblInstruction1.setBorder(BorderFactory.createEmptyBorder(15, 10, 5, 10));
+        pnlConnect.add(lblInstruction1, BorderLayout.NORTH);
+        pnlConnect.add(new JLabel(service.QRService.generateQRCode(connectionURL, 300, 300)), BorderLayout.CENTER);
+
+        JPanel pnlDownload = new JPanel(new BorderLayout(10, 10));
+        pnlDownload.setBackground(new Color(245, 250, 255));
+        JLabel lblInstruction2 = new JLabel("<html><center><font size='4'>Chưa có App? Dùng <b>Zalo</b> hoặc <b>Camera</b> quét mã này</font><br><span style='color:#28A745;'>để tải và cài đặt ứng dụng lần đầu tiên</span></center></html>", SwingConstants.CENTER);
+        lblInstruction2.setBorder(BorderFactory.createEmptyBorder(15, 10, 5, 10));
+        pnlDownload.add(lblInstruction2, BorderLayout.NORTH);
+        pnlDownload.add(new JLabel(service.QRService.generateQRCode(downloadURL, 300, 300)), BorderLayout.CENTER);
+
+        // Sử dụng HTML để hiển thị Emoji chuẩn xác
+        tabbedPane.addTab("<html><span style='font-family: \"Segoe UI Emoji\"'>🔗</span> Quét mã Kết nối</html>", pnlConnect);
+        tabbedPane.addTab("<html><span style='font-family: \"Segoe UI Emoji\"'>📥</span> Quét để Tải App mới</html>", pnlDownload);
+
+        JPanel pnlBottom = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        JButton btnClose = new JButton("Đóng hộp thoại");
+        btnClose.setFont(new Font("Arial", Font.BOLD, 13));
         btnClose.addActionListener(e -> dialog.dispose());
-        dialog.add(lblInstruction, BorderLayout.NORTH);
-        dialog.add(lblQR, BorderLayout.CENTER);
-        dialog.add(btnClose, BorderLayout.SOUTH);
+        pnlBottom.add(btnClose);
+
+        dialog.add(tabbedPane, BorderLayout.CENTER);
+        dialog.add(pnlBottom, BorderLayout.SOUTH);
+
         dialog.pack();
         dialog.setLocationRelativeTo(this);
         dialog.setVisible(true);

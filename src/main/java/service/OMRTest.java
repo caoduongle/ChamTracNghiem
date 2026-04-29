@@ -6,12 +6,16 @@ import java.util.Map;
 
 public class OMRTest {
 
-    // [CLEAN CODE] Tách hardcode path ra hằng số
+    // 1. Cố định đường dẫn ảnh luôn là phieumau.jpg
     private static final String TEST_IMAGE_PATH = "phieumau.jpg";
+
+    // 2. [SỬA Ở ĐÂY LÚC TEST]: Bạn muốn test mẫu nào thì đổi chữ "BGD4" thành "QM", "BGD3", "TNMAKER" v.v...
+    private static final String TEMPLATE_TO_TEST = "BGD3";
 
     public static void main(String[] args) {
         System.out.println("=================================================");
         System.out.println("      BẮT ĐẦU CHẠY THỬ HỆ THỐNG OMR AI           ");
+        System.out.println("      Đang test cấu hình của mẫu: " + TEMPLATE_TO_TEST);
         System.out.println("=================================================");
 
         File imgFile = new File(TEST_IMAGE_PATH);
@@ -21,18 +25,29 @@ public class OMRTest {
             return;
         }
 
-        // [CLEAN CODE] Sử dụng constructor truyền số lượng câu thẳng luôn, khỏi cần Setter dài dòng
-        ExamConfig testConfig = new ExamConfig(40, 8, 6);
+        // Tự động thiết lập số lượng câu hỏi (ExamConfig) tùy theo mẫu bạn đang chọn ở trên
+        ExamConfig testConfig;
+        switch (TEMPLATE_TO_TEST) {
+            case "BGD4":
+            case "BGD4.1":
+            case "BGD3":
+            case "QM":
+            case "TNMAKER":
+            default:
+                testConfig = new ExamConfig(40, 8, 6); // 40 TN, 8 Đ/S, 6 Điền
+        }
 
         try {
-            System.out.println("[INFO] Đang nạp ảnh và gọi OMRService...");
+            System.out.println("[INFO] Đang nạp ảnh và gọi OMRService...\n");
 
             // Gọi hàm xử lý cốt lõi
-            Map<String, String> results = OMRService.processExam(TEST_IMAGE_PATH, testConfig);
+            // LƯU Ý: Nếu OMRService của bạn có viết thêm tham số nhận tên Mẫu phiếu, hãy sửa dòng dưới thành:
+            // Map<String, String> results = OMRService.processExam(TEST_IMAGE_PATH, testConfig, TEMPLATE_TO_TEST);
+            Map<String, String> results = OMRService.processExam(TEST_IMAGE_PATH, testConfig, TEMPLATE_TO_TEST);
 
             // Xử lý kết quả trả về
             if (results != null && !results.isEmpty()) {
-                System.out.println("\n================ KẾT QUẢ QUÉT ===================");
+                System.out.println("================ KẾT QUẢ QUÉT ===================");
                 for (Map.Entry<String, String> entry : results.entrySet()) {
                     System.out.printf("%-20s : %s\n", entry.getKey(), entry.getValue());
                 }

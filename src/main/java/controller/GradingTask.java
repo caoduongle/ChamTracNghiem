@@ -26,11 +26,17 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
     private Map<String, model.OMRModels.ExamReport> reportDatabase;
     private Map<String, File> assignedFiles;
     private Map<String, String> studentExamCodes;
+
+    // [ĐÃ THÊM]: Biến lưu tên mẫu phiếu được chọn từ giao diện
+    private String templateId;
+
     private Runnable onUpdateTableCallback;
 
+    // [ĐÃ SỬA]: Thêm tham số String templateId vào Constructor
     public GradingTask(MainView view, ExamConfig currentConfig, ExamSession currentSession,
                        ClassRoom currentClassRoom, Map<String, model.OMRModels.ExamReport> reportDatabase,
                        Map<String, File> assignedFiles, Map<String, String> studentExamCodes,
+                       String templateId,
                        Runnable onUpdateTableCallback) {
         this.view = view;
         this.currentConfig = currentConfig;
@@ -39,6 +45,7 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
         this.reportDatabase = reportDatabase;
         this.assignedFiles = assignedFiles;
         this.studentExamCodes = studentExamCodes;
+        this.templateId = templateId; // Lưu lại mẫu phiếu
         this.onUpdateTableCallback = onUpdateTableCallback;
     }
 
@@ -101,24 +108,17 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
             String selectedCode = studentExamCodes.getOrDefault(stt, "Mặc định");
             threadConfig.setActiveCode(selectedCode);
 
-            Map<String, String> studentResults = OMRService.processExam(file.getAbsolutePath(), threadConfig);
+            Map<String, String> studentResults = OMRService.processExam(file.getAbsolutePath(), threadConfig, this.templateId);
 
             if (studentResults != null) {
-                // 1. Phân tích kết quả, lọc lỗi và cảnh báo
                 ValidationResult validation = validateStudentResults(studentResults);
-
-                // 2. Chấm điểm
                 model.OMRModels.ExamReport newReport = service.ScoringEngine.gradeExam(stt, "AUTO", studentResults, threadConfig);
-
-                // 3. Kiểm tra xem bài làm có bị sai câu nào không
                 boolean isPerfect = !validation.hasError && !validation.hasWarning && checkPerfectScore(newReport);
 
-                // 4. Gọi FileUtil để xử lý copy/xóa ảnh (Thay thế cho đoạn code dài ngoằng cũ)
                 String savedImagePath = FileUtil.handleGradedExamFiles(
                         file, stt, currentClassRoom.className, currentSession.getExamName(), autoClean, isPerfect
                 );
 
-                // 5. Cập nhật thông tin báo cáo
                 newReport.originalImagePath = file.getAbsolutePath();
                 newReport.imagePath = savedImagePath;
                 newReport.studentName = getStudentName(stt);
@@ -127,17 +127,56 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
                 newReport.examCode = selectedCode;
                 newReport.statusMessage = generateStatusMessage(validation);
 
-                // 6. Lưu vào Database
                 synchronized(reportDatabase) { reportDatabase.put(stt, newReport); }
                 synchronized(currentSession) {
                     currentSession.getReports().removeIf(r -> r.studentId.equals(stt));
                     currentSession.addReport(newReport);
                 }
+                publish(new Object[]{"UPDATE", stt});
 
+            } else {
+                // =====================================================================
+                // SỬA LỖI ĐIỂM MA: Tạo đối tượng Report MỚI TINH để reset điểm về 0
+                // =====================================================================
+                model.OMRModels.ExamReport failedReport = new model.OMRModels.ExamReport();
+                failedReport.studentId = stt;
+                failedReport.originalImagePath = file.getAbsolutePath();
+                failedReport.imagePath = file.getAbsolutePath();
+                failedReport.studentName = getStudentName(stt);
+                failedReport.studentSttFile = stt;
+                failedReport.studentClass = currentClassRoom.className;
+                failedReport.examCode = selectedCode;
+
+                failedReport.statusMessage = "<html><span style=\"font-family: 'Segoe UI Emoji'; color: #D32F2F; font-weight: bold;\">🚨 LỖI ẢNH: Không tìm thấy 4 góc</span></html>";
+
+                synchronized(reportDatabase) { reportDatabase.put(stt, failedReport); }
+                synchronized(currentSession) {
+                    currentSession.getReports().removeIf(r -> r.studentId.equals(stt));
+                    currentSession.addReport(failedReport);
+                }
                 publish(new Object[]{"UPDATE", stt});
             }
         } catch (Throwable t) {
             t.printStackTrace();
+            // =====================================================================
+            // SỬA LỖI KẸT "CHỜ CHẤM": Bắt quả tang Crash ngầm và báo lên UI
+            // =====================================================================
+            model.OMRModels.ExamReport crashReport = new model.OMRModels.ExamReport();
+            crashReport.studentId = stt;
+            crashReport.originalImagePath = file.getAbsolutePath();
+            crashReport.imagePath = file.getAbsolutePath();
+            crashReport.studentName = getStudentName(stt);
+            crashReport.studentSttFile = stt;
+            crashReport.studentClass = currentClassRoom.className;
+
+            crashReport.statusMessage = "<html><span style=\"font-family: 'Segoe UI Emoji'; color: #FF8C00; font-weight: bold;\">⚠️ LỖI ĐỌC ẢNH (" + t.getClass().getSimpleName() + ")</span></html>";
+
+            synchronized(reportDatabase) { reportDatabase.put(stt, crashReport); }
+            synchronized(currentSession) {
+                currentSession.getReports().removeIf(r -> r.studentId.equals(stt));
+                currentSession.addReport(crashReport);
+            }
+            publish(new Object[]{"UPDATE", stt});
         }
 
         int completed = currentCount.incrementAndGet();
@@ -146,25 +185,42 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
 
     private ValidationResult validateStudentResults(Map<String, String> studentResults) {
         ValidationResult res = new ValidationResult();
+        int totalQuestions = studentResults.size();
+        int garbageCount = 0; // Bộ đếm số lượng câu không đọc được
+
         for (Map.Entry<String, String> entryResult : studentResults.entrySet()) {
             String val = entryResult.getValue();
             String qName = entryResult.getKey()
                     .replace("P1_", "Phần 1 - ").replace("P2_", "Phần 2 - ").replace("P3_", "Phần 3 - ").replace("_", " ");
 
-            if (val.startsWith("ERR_")) {
+            // Nếu câu bị trống (do khung quét rơi vào vùng giấy trắng)
+            if (val.equals("?")) {
+                garbageCount++;
+            }
+            else if (val.startsWith("ERR_")) {
                 res.hasError = true;
                 res.errorList.add(qName + " (Tô đúp)");
                 studentResults.put(entryResult.getKey(), "?");
-            } else if (val.startsWith("WARN_FMT_")) {
+                garbageCount++; // Lỗi đúp (thường do khung đè lên vạch kẻ đen)
+            }
+            else if (val.startsWith("WARN_FMT_")) {
                 res.hasWarning = true;
                 res.errorList.add(qName + " (Lỗi Format)");
                 studentResults.put(entryResult.getKey(), val.substring(9));
-            } else if (val.startsWith("WARN_")) {
+            }
+            else if (val.startsWith("WARN_")) {
                 res.hasWarning = true;
                 res.errorList.add(qName + " (Tô mờ)");
                 studentResults.put(entryResult.getKey(), val.substring(5));
             }
         }
+
+        // [LOGIC BẮT BỆNH SAI MẪU PHIẾU]:
+        // Nếu số lượng câu hỏi rác (trống/lỗi) chiếm hơn 50% tổng số câu -> Báo động đỏ!
+        if (totalQuestions > 0 && ((double) garbageCount / totalQuestions) >= 0.5) {
+            res.isWrongTemplate = true;
+        }
+
         return res;
     }
 
@@ -183,6 +239,9 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
     }
 
     private String generateStatusMessage(ValidationResult validation) {
+        if (validation.isWrongTemplate) {
+            return "<html><span style=\"font-family: 'Segoe UI Emoji'; color: #D32F2F; font-weight: bold;\">🚨 SAI MẪU PHIẾU (Hoặc giấy trắng)</span></html>";
+        }
         if (validation.hasError) return "<html><span style=\"font-family: 'Segoe UI Emoji'\">❌</span> Lỗi: " + String.join(", ", validation.errorList) + "</html>";
         if (validation.hasWarning) return "<html><span style=\"font-family: 'Segoe UI Emoji'\">⚠️</span> Nhắc: " + String.join(", ", validation.errorList) + "</html>";
         return "<html><span style=\"font-family: 'Segoe UI Emoji'\">✅</span> Thành công</html>";
@@ -209,9 +268,9 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
     private static class ValidationResult {
         boolean hasError = false;
         boolean hasWarning = false;
+        boolean isWrongTemplate = false; // <--- [MỚI]: Cờ báo hiệu sai mẫu phiếu
         List<String> errorList = new ArrayList<>();
     }
-
     // ===================================================================================
     // UI UPDATES (SwingWorker Methods)
     // ===================================================================================
@@ -237,7 +296,7 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
 
     @Override
     protected void done() {
-        try { get(); } catch (Exception e) {}
+        try { get(); } catch (Exception e) {} // Nuốt ngoại lệ để không bung hộp thoại xấu xí ra màn hình
 
         toggleUIComponents(true);
         assignedFiles.clear();
@@ -258,5 +317,4 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
             Toolkit.getDefaultToolkit().beep();
         }
     }
-} // KẾT THÚC CLASS TẠI ĐÂY, KHÔNG ĐỂ MÃ NÀO LỌT RA NGOÀI DẤU NGOẶC NÀY NỮA
-
+}

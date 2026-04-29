@@ -1,9 +1,6 @@
 package controller;
 
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.FlowLayout;
-import java.awt.Font;
+import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
@@ -12,7 +9,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.prefs.Preferences;
-
 import javax.swing.*;
 
 import model.ClassRoom;
@@ -24,7 +20,6 @@ import view.ClassManagementDialog;
 import view.MainView;
 import view.StartupDialog;
 import view.WrongAnswerDialog;
-import view.DashboardDialog;
 
 public class MainController {
     private MainView view;
@@ -42,26 +37,15 @@ public class MainController {
     public MainController(MainView view) {
         this.view = view;
         this.tableManager = new ResultTableManager(view);
-
         startGlobalServer();
-
         initController();
         initApp();
-
-        if (DataManager.getAutoCleanupMode() == 1) {
-            DataManager.performSilentDeepCleanup();
-        }
+        if (DataManager.getAutoCleanupMode() == 1) DataManager.performSilentDeepCleanup();
     }
 
-    // =========================================================================
-    // [ĐÃ FIX LỖI]: registerPendingSubmission hoàn chỉnh, không còn lỗi 'score'
-    // =========================================================================
     private void registerPendingSubmission(String stt, String examCode, File imageFile) {
         assignedFiles.put(stt, imageFile);
-
-        boolean isDefaultCode = examCode == null || examCode.trim().isEmpty() ||
-                examCode.trim().equalsIgnoreCase("Mặc định") ||
-                examCode.trim().equalsIgnoreCase("Mặc định (Không mã)");
+        boolean isDefaultCode = examCode == null || examCode.trim().isEmpty() || examCode.trim().equalsIgnoreCase("Mặc định") || examCode.trim().equalsIgnoreCase("Mặc định (Không mã)");
 
         if (!isDefaultCode) {
             studentExamCodes.put(stt, examCode.trim());
@@ -73,33 +57,21 @@ public class MainController {
             studentExamCodes.remove(stt);
         }
 
-        model.OMRModels.ExamReport report = reportDatabase.get(stt);
-        boolean isNew = false;
-        if (report == null) {
-            report = new model.OMRModels.ExamReport();
-            report.studentId = stt;
-            reportDatabase.put(stt, report);
-            isNew = true;
-        }
+        model.OMRModels.ExamReport report = reportDatabase.computeIfAbsent(stt, k -> {
+            model.OMRModels.ExamReport newReport = new model.OMRModels.ExamReport();
+            newReport.studentId = stt;
+            if (currentSession != null && currentSession.getReports() != null) {
+                currentSession.getReports().add(newReport);
+            }
+            return newReport;
+        });
 
         report.imagePath = imageFile.getAbsolutePath();
         report.originalImagePath = imageFile.getAbsolutePath();
-
-        if (studentExamCodes.containsKey(stt)) {
-            report.examCode = studentExamCodes.get(stt);
-        } else {
-            report.examCode = null;
-        }
-
-        // Trạng thái chờ chấm, không cần gán biến score gây lỗi
+        report.examCode = studentExamCodes.get(stt);
         report.statusMessage = "Chờ chấm...";
 
-        if (currentSession != null) {
-            if (isNew && currentSession.getReports() != null) {
-                currentSession.getReports().add(report);
-            }
-            service.DataManager.saveSession(currentSession, currentClassRoom.className);
-        }
+        if (currentSession != null) service.DataManager.saveSession(currentSession, currentClassRoom.className);
     }
 
     private void startGlobalServer() {
@@ -108,21 +80,17 @@ public class MainController {
             public void onImageReceived(String className, String examName, String stt, String templateId, String examCode, String imagePath) {
                 SwingUtilities.invokeLater(() -> {
                     try {
-                        boolean isClassMatch = currentClassRoom != null && currentClassRoom.className.trim().equalsIgnoreCase(className.trim());
-                        boolean isExamMatch = currentSession != null && currentSession.getExamName().trim().equalsIgnoreCase(examName.trim());
+                        if (currentClassRoom != null && currentClassRoom.className.trim().equalsIgnoreCase(className.trim()) &&
+                                currentSession != null && currentSession.getExamName().trim().equalsIgnoreCase(examName.trim())) {
 
-                        if (isClassMatch && isExamMatch) {
-                            String cleanStt = stt.trim();
                             int incomingStt = -1;
-                            try { incomingStt = Integer.parseInt(cleanStt); } catch(Exception e) {}
+                            try { incomingStt = Integer.parseInt(stt.trim()); } catch(Exception ignored) {}
 
-                            String exactSttKey = cleanStt;
+                            String exactSttKey = stt.trim();
                             for (String rowStt : currentRowStts) {
                                 try {
-                                    if (incomingStt != -1 && Integer.parseInt(rowStt.trim()) == incomingStt) {
-                                        exactSttKey = rowStt; break;
-                                    }
-                                } catch(Exception e) {}
+                                    if (incomingStt != -1 && Integer.parseInt(rowStt.trim()) == incomingStt) { exactSttKey = rowStt; break; }
+                                } catch(Exception ignored) {}
                             }
 
                             registerPendingSubmission(exactSttKey, examCode, new java.io.File(imagePath));
@@ -137,9 +105,8 @@ public class MainController {
             public void onTemplateChanged(String className, String examName, String newTemplateId) {
                 SwingUtilities.invokeLater(() -> {
                     try {
-                        boolean isClassMatch = currentClassRoom != null && currentClassRoom.className.trim().equalsIgnoreCase(className.trim());
-                        boolean isExamMatch = currentSession != null && currentSession.getExamName().trim().equalsIgnoreCase(examName.trim());
-                        if (isClassMatch && isExamMatch) {
+                        if (currentClassRoom != null && currentClassRoom.className.trim().equalsIgnoreCase(className.trim()) &&
+                                currentSession != null && currentSession.getExamName().trim().equalsIgnoreCase(examName.trim())) {
                             view.getCbxTemplate().setSelectedItem(newTemplateId);
                             view.setStatusMessage("🔄 Điện thoại vừa chọn mẫu phiếu: " + newTemplateId);
                         }
@@ -153,9 +120,7 @@ public class MainController {
         view.getLblServerStatus().setForeground(new Color(0, 150, 0));
     }
 
-    public void initApp() {
-        showClassMenu(true);
-    }
+    public void initApp() { showClassMenu(true); }
 
     private void showClassMenu(boolean isFirstRun) {
         view.setVisible(false);
@@ -197,28 +162,29 @@ public class MainController {
         }
     }
 
-    // =========================================================================
-    // [ĐÃ SỬA]: Tự động nạp lại ảnh đã có từ file dữ liệu cũ lên Bảng
-    // =========================================================================
+    // =====================================================================================
+    // VÙNG SỬA LỖI 1: Chỉ cho file vào danh sách "Chờ chấm" nếu nó thực sự chưa được chấm
+    // =====================================================================================
     private void loadSessionToUI() {
         if (currentSession != null && currentSession.getReports() != null) {
             studentExamCodes.clear();
-            assignedFiles.clear(); // Xóa bộ đệm cũ
+            assignedFiles.clear();
 
             for (model.OMRModels.ExamReport report : currentSession.getReports()) {
                 reportDatabase.put(report.studentId, report);
+                if (report.examCode != null) studentExamCodes.put(report.studentId, report.examCode);
 
-                // Nạp mã đề
-                if (report.examCode != null) {
-                    studentExamCodes.put(report.studentId, report.examCode);
-                }
-
-                // [QUAN TRỌNG]: Tìm và gán lại file ảnh từ dữ liệu cũ để không phải nạp lại
                 String path = (report.imagePath != null) ? report.imagePath : report.originalImagePath;
                 if (path != null) {
                     File imgFile = new File(path);
                     if (imgFile.exists()) {
-                        assignedFiles.put(report.studentId, imgFile);
+                        // CHỈ cho vào danh sách chờ chấm nếu trạng thái đang báo cần chấm
+                        boolean isWaiting = report.statusMessage == null ||
+                                report.statusMessage.contains("Chờ chấm") ||
+                                report.statusMessage.contains("Đã đổi mã");
+                        if (isWaiting) {
+                            assignedFiles.put(report.studentId, imgFile);
+                        }
                     }
                 }
             }
@@ -232,6 +198,7 @@ public class MainController {
             String savedTemp = Preferences.userRoot().node("ChamTracNghiem_N7")
                     .get("TEMPLATE_" + currentClassRoom.className + "_" + currentSession.getExamName(), "BGD4");
             view.getCbxTemplate().setSelectedItem(savedTemp);
+            updateTemplatePreview(savedTemp);
         }
 
         refreshTable();
@@ -243,34 +210,51 @@ public class MainController {
 
     private void initController() {
         view.setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
-
         view.getBtnConnectPhone().addActionListener(e -> showConnectionDialog());
 
         view.getCbxTemplate().addActionListener(e -> {
+            String selected = (String) view.getCbxTemplate().getSelectedItem();
+
+            // [THÊM MỚI]: Gọi hàm thay đổi ảnh hiển thị ngay khi người dùng chọn
+            updateTemplatePreview(selected);
+
             if (currentClassRoom != null && currentSession != null) {
-                String selected = (String) view.getCbxTemplate().getSelectedItem();
                 Preferences.userRoot().node("ChamTracNghiem_N7")
                         .put("TEMPLATE_" + currentClassRoom.className + "_" + currentSession.getExamName(), selected);
             }
         });
 
+        // =====================================================================================
+        // VÙNG SỬA LỖI 2: Ngăn không cho bảng tự động kích hoạt chức năng Reset điểm khi nạp
+        // =====================================================================================
         view.getTblResults().getModel().addTableModelListener(e -> {
-            if (e.getColumn() == 3) {
+            // Phải kiểm tra chính xác là hành động UPDATE từ cột 3 (Mã Đề) do người dùng thao tác
+            if (e.getType() == javax.swing.event.TableModelEvent.UPDATE && e.getColumn() == 3) {
                 int row = e.getFirstRow();
                 if (row != -1 && row < currentRowStts.size()) {
                     String stt = currentRowStts.get(row);
                     String selectedCode = (String) view.getTblResults().getValueAt(row, 3);
-
-                    studentExamCodes.put(stt, selectedCode);
                     model.OMRModels.ExamReport report = reportDatabase.get(stt);
-                    if (report != null && selectedCode != null && !selectedCode.equals(report.examCode)) {
-                        report.examCode = selectedCode;
-                        report.statusMessage = "<html><span style=\"font-family: 'Segoe UI Emoji'\">⚠️</span> Đã đổi mã, cần chấm lại</html>";
 
-                        if (currentSession != null) {
-                            service.DataManager.saveSession(currentSession, currentClassRoom.className);
+                    if (report != null) {
+                        String oldCode = (report.examCode == null || report.examCode.trim().isEmpty()) ? "Mặc định" : report.examCode;
+                        String newCode = (selectedCode == null || selectedCode.trim().isEmpty()) ? "Mặc định" : selectedCode;
+
+                        // CHỈ Reset nếu mã cũ và mã mới thực sự KHÁC NHAU
+                        if (!oldCode.equals(newCode)) {
+                            report.examCode = newCode.equals("Mặc định") ? null : newCode;
+                            studentExamCodes.put(stt, report.examCode);
+                            report.statusMessage = "<html><span style=\"font-family: 'Segoe UI Emoji'\">⚠️</span> Đã đổi mã, cần chấm lại</html>";
+
+                            // Ném ảnh lại vào danh sách Chờ Chấm
+                            String path = (report.originalImagePath != null) ? report.originalImagePath : report.imagePath;
+                            if (path != null) assignedFiles.put(stt, new File(path));
+
+                            if (currentSession != null) service.DataManager.saveSession(currentSession, currentClassRoom.className);
+
+                            // Yêu cầu Table vẽ lại ngay để giấu điểm số đi
+                            SwingUtilities.invokeLater(() -> refreshTable());
                         }
-                        SwingUtilities.invokeLater(() -> view.getTblResults().setValueAt(report.statusMessage, row, 5));
                     }
                 }
             }
@@ -303,8 +287,7 @@ public class MainController {
             if (validFiles.size() == 1) {
                 int row = view.getTblResults().rowAtPoint(dropPoint);
                 if (row != -1) {
-                    String stt = currentRowStts.get(row);
-                    registerPendingSubmission(stt, null, validFiles.get(0));
+                    registerPendingSubmission(currentRowStts.get(row), null, validFiles.get(0));
                     refreshTable();
                     return;
                 }
@@ -319,77 +302,11 @@ public class MainController {
                 }
             }
             refreshTable();
-
-            if (autoCount > 0) {
-                view.setStatusMessage("Đã gán tự động " + autoCount + " bài thi dựa theo STT.");
-            } else if (validFiles.size() > 1) {
-                JOptionPane.showMessageDialog(view, "Không có file nào khớp với STT của lớp này.");
-            }
+            if (autoCount > 0) view.setStatusMessage("Đã gán tự động " + autoCount + " bài thi dựa theo STT.");
+            else if (validFiles.size() > 1) JOptionPane.showMessageDialog(view, "Không có file nào khớp với STT của lớp này.");
         });
 
-        JPopupMenu popupMenu = new JPopupMenu();
-        JMenuItem itemDetail = new JMenuItem("🔍 Xem chi tiết & Sửa điểm");
-        JMenuItem itemReassign = new JMenuItem("📁 Gán ảnh bài làm");
-        JMenuItem itemDelete = new JMenuItem("❌ Xóa bài làm này");
-
-        itemDetail.setFont(new Font("Arial", Font.BOLD, 13));
-        itemDelete.setForeground(Color.RED);
-
-        popupMenu.add(itemDetail);
-        popupMenu.add(itemReassign);
-        popupMenu.addSeparator();
-        popupMenu.add(itemDelete);
-
-        view.getTblResults().addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                if (SwingUtilities.isLeftMouseButton(e) && e.getClickCount() == 2) {
-                    int row = ((JTable) e.getSource()).getSelectedRow();
-                    if (row != -1) {
-                        String stt = currentRowStts.get(row);
-                        String name = (String) view.getTblResults().getValueAt(row, 1);
-                        handleStudentDoubleClick(stt, name);
-                    }
-                }
-            }
-
-            @Override
-            public void mouseReleased(MouseEvent e) {
-                if (SwingUtilities.isRightMouseButton(e) || e.isPopupTrigger()) {
-                    int row = view.getTblResults().rowAtPoint(e.getPoint());
-                    if (row != -1) {
-                        view.getTblResults().setRowSelectionInterval(row, row);
-                        String stt = currentRowStts.get(row);
-                        String name = (String) view.getTblResults().getValueAt(row, 1);
-
-                        model.OMRModels.ExamReport report = reportDatabase.get(stt);
-                        boolean hasData = (report != null || assignedFiles.containsKey(stt));
-
-                        boolean isWaiting = report != null && "Chờ chấm...".equals(report.statusMessage);
-
-                        itemDetail.setEnabled(report != null && !isWaiting);
-                        itemDelete.setEnabled(hasData);
-                        itemReassign.setText(hasData ? "📁 Gán lại ảnh khác" : "📁 Gán ảnh bài làm");
-
-                        for(java.awt.event.ActionListener al : itemDetail.getActionListeners()) itemDetail.removeActionListener(al);
-                        for(java.awt.event.ActionListener al : itemReassign.getActionListeners()) itemReassign.removeActionListener(al);
-                        for(java.awt.event.ActionListener al : itemDelete.getActionListeners()) itemDelete.removeActionListener(al);
-
-                        itemDetail.addActionListener(ev -> {
-                            new view.WrongAnswerDialog(view, report, currentConfig, () -> {
-                                refreshTable();
-                                if (currentSession != null) service.DataManager.saveSession(currentSession, currentClassRoom.className);
-                            }).setVisible(true);
-                        });
-
-                        itemReassign.addActionListener(ev -> openDragAndDropDialog(stt, name));
-                        itemDelete.addActionListener(ev -> removeStudentExam(stt, name));
-
-                        popupMenu.show(e.getComponent(), e.getX(), e.getY());
-                    }
-                }
-            }
-        });
+        setupTablePopupMenu();
 
         view.getBtnSetAnswerKey().addActionListener(e -> {
             AnswerKeyDialog dialog = new AnswerKeyDialog(view);
@@ -421,14 +338,10 @@ public class MainController {
 
         view.getBtnExportConfig().addActionListener(e -> {
             if (currentConfig == null || currentConfig.getExamCodes().isEmpty()) {
-                JOptionPane.showMessageDialog(view, "Chưa có cấu hình đáp án để xuất!");
-                return;
+                JOptionPane.showMessageDialog(view, "Chưa có cấu hình đáp án để xuất!"); return;
             }
             Object[] codes = currentConfig.getExamCodes().toArray();
-            String selectedCode = (String) JOptionPane.showInputDialog(
-                    view, "Chọn mã đề muốn xuất đáp án:", "Xuất đáp án chi tiết",
-                    JOptionPane.QUESTION_MESSAGE, null, codes, codes[0]
-            );
+            String selectedCode = (String) JOptionPane.showInputDialog(view, "Chọn mã đề muốn xuất đáp án:", "Xuất đáp án chi tiết", JOptionPane.QUESTION_MESSAGE, null, codes, codes[0]);
             if (selectedCode != null) {
                 currentConfig.setActiveCode(selectedCode);
                 saveExcel(currentSession.getExamName() + "_" + selectedCode + ".xlsx", 2);
@@ -441,70 +354,107 @@ public class MainController {
                 JOptionPane.showMessageDialog(view, "Vui lòng chọn các học sinh trên bảng!");
                 return;
             }
-            if (currentConfig == null || currentConfig.getExamCodes().isEmpty()) {
-                JOptionPane.showMessageDialog(view, "Vui lòng cài đặt đáp án trước!");
-                return;
-            }
-
-            Object[] codes = currentConfig.getExamCodes().toArray();
-            String selectedCode = (String) JOptionPane.showInputDialog(
-                    view, "Chọn mã đề cho " + selectedRows.length + " học sinh:", "Đổi đề vùng chọn",
-                    JOptionPane.QUESTION_MESSAGE, null, codes, codes[0]
-            );
-
-            if (selectedCode != null) {
-                if (view.getTblResults().isEditing() && view.getTblResults().getCellEditor() != null) {
-                    view.getTblResults().getCellEditor().stopCellEditing();
-                }
-
-                boolean needsSave = false;
-                for (int row : selectedRows) {
-                    String stt = currentRowStts.get(row);
-                    studentExamCodes.put(stt, selectedCode);
-                    model.OMRModels.ExamReport report = reportDatabase.get(stt);
-                    if (report != null) {
-                        report.examCode = selectedCode;
-                        report.statusMessage = "<html><span style=\"font-family: 'Segoe UI Emoji'\">⚠️</span> Đã đổi mã, cần chấm lại</html>";
-                        needsSave = true;
-                    }
-                }
-                if (needsSave && currentSession != null) service.DataManager.saveSession(currentSession, currentClassRoom.className);
-                refreshTable();
-                view.setStatusMessage("Đã cập nhật mã đề " + selectedCode + " cho " + selectedRows.length + " học sinh.");
-            }
+            applyExamCodeChange(selectedRows, "Đổi đề vùng chọn", "Đã cập nhật mã đề ");
         });
 
         view.getBtnBulkChangeCode().addActionListener(e -> {
-            if (currentConfig == null || currentConfig.getExamCodes().isEmpty()) {
-                JOptionPane.showMessageDialog(view, "Vui lòng cài đặt đáp án trước!");
-                return;
+            int totalRows = view.getTblResults().getRowCount();
+            int[] allRows = new int[totalRows];
+            for (int i = 0; i < totalRows; i++) allRows[i] = i;
+            applyExamCodeChange(allRows, "Đổi đề hàng loạt", "Đã chuyển toàn bộ lớp sang mã đề: ");
+        });
+    }
+
+    // =====================================================================================
+    // VÙNG SỬA LỖI 3: Đổi mã đề hàng loạt phải tự động ném ảnh vào danh sách chờ
+    // =====================================================================================
+    private void applyExamCodeChange(int[] targetRows, String title, String successMsg) {
+        if (currentConfig == null || currentConfig.getExamCodes().isEmpty()) {
+            JOptionPane.showMessageDialog(view, "Vui lòng cài đặt đáp án trước!"); return;
+        }
+
+        Object[] codes = currentConfig.getExamCodes().toArray();
+        String selectedCode = (String) JOptionPane.showInputDialog(view, "Chọn mã đề:", title, JOptionPane.QUESTION_MESSAGE, null, codes, codes[0]);
+
+        if (selectedCode != null) {
+            if (view.getTblResults().isEditing() && view.getTblResults().getCellEditor() != null) view.getTblResults().getCellEditor().stopCellEditing();
+
+            boolean needsSave = false;
+            for (int row : targetRows) {
+                String stt = currentRowStts.get(row);
+                studentExamCodes.put(stt, selectedCode.equals("Mặc định") ? null : selectedCode);
+                model.OMRModels.ExamReport report = reportDatabase.get(stt);
+                if (report != null) {
+                    report.examCode = selectedCode.equals("Mặc định") ? null : selectedCode;
+                    report.statusMessage = "<html><span style=\"font-family: 'Segoe UI Emoji'\">⚠️</span> Đã đổi mã, cần chấm lại</html>";
+
+                    // Ném lại vào hàng chờ chấm để mất điểm ngay lập tức trên UI
+                    String path = (report.originalImagePath != null) ? report.originalImagePath : report.imagePath;
+                    if (path != null) assignedFiles.put(stt, new File(path));
+
+                    needsSave = true;
+                }
+            }
+            if (needsSave && currentSession != null) service.DataManager.saveSession(currentSession, currentClassRoom.className);
+            refreshTable();
+            view.setStatusMessage(successMsg + selectedCode);
+        }
+    }
+
+    private void setupTablePopupMenu() {
+        JPopupMenu popupMenu = new JPopupMenu();
+        JMenuItem itemDetail = new JMenuItem("🔍 Xem chi tiết & Sửa điểm");
+        JMenuItem itemReassign = new JMenuItem("📁 Gán ảnh bài làm");
+        JMenuItem itemDelete = new JMenuItem("❌ Xóa bài làm này");
+
+        itemDetail.setFont(new Font("Arial", Font.BOLD, 13));
+        itemDelete.setForeground(Color.RED);
+
+        popupMenu.add(itemDetail);
+        popupMenu.add(itemReassign);
+        popupMenu.addSeparator();
+        popupMenu.add(itemDelete);
+
+        view.getTblResults().addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (SwingUtilities.isLeftMouseButton(e) && e.getClickCount() == 2) {
+                    int row = ((JTable) e.getSource()).getSelectedRow();
+                    if (row != -1) handleStudentDoubleClick(currentRowStts.get(row), (String) view.getTblResults().getValueAt(row, 1));
+                }
             }
 
-            Object[] codes = currentConfig.getExamCodes().toArray();
-            String selectedCode = (String) JOptionPane.showInputDialog(
-                    view, "Chọn mã đề muốn áp dụng cho TẤT CẢ học sinh:", "Đổi đề hàng loạt",
-                    JOptionPane.QUESTION_MESSAGE, null, codes, codes[0]
-            );
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                if (SwingUtilities.isRightMouseButton(e) || e.isPopupTrigger()) {
+                    int row = view.getTblResults().rowAtPoint(e.getPoint());
+                    if (row != -1) {
+                        view.getTblResults().setRowSelectionInterval(row, row);
+                        String stt = currentRowStts.get(row);
+                        String name = (String) view.getTblResults().getValueAt(row, 1);
 
-            if (selectedCode != null) {
-                if (view.getTblResults().isEditing() && view.getTblResults().getCellEditor() != null) {
-                    view.getTblResults().getCellEditor().stopCellEditing();
-                }
+                        model.OMRModels.ExamReport report = reportDatabase.get(stt);
+                        boolean hasData = (report != null || assignedFiles.containsKey(stt));
+                        boolean isWaiting = report != null && "Chờ chấm...".equals(report.statusMessage);
 
-                boolean needsSave = false;
-                for (int i = 0; i < view.getTblResults().getRowCount(); i++) {
-                    String stt = currentRowStts.get(i);
-                    studentExamCodes.put(stt, selectedCode);
-                    model.OMRModels.ExamReport report = reportDatabase.get(stt);
-                    if (report != null) {
-                        report.examCode = selectedCode;
-                        report.statusMessage = "<html><span style=\"font-family: 'Segoe UI Emoji'\">⚠️</span> Đã đổi mã, cần chấm lại</html>";
-                        needsSave = true;
+                        itemDetail.setEnabled(report != null && !isWaiting);
+                        itemDelete.setEnabled(hasData);
+                        itemReassign.setText(hasData ? "📁 Gán lại ảnh khác" : "📁 Gán ảnh bài làm");
+
+                        for(java.awt.event.ActionListener al : itemDetail.getActionListeners()) itemDetail.removeActionListener(al);
+                        for(java.awt.event.ActionListener al : itemReassign.getActionListeners()) itemReassign.removeActionListener(al);
+                        for(java.awt.event.ActionListener al : itemDelete.getActionListeners()) itemDelete.removeActionListener(al);
+
+                        itemDetail.addActionListener(ev -> new view.WrongAnswerDialog(view, report, currentConfig, () -> {
+                            refreshTable();
+                            if (currentSession != null) service.DataManager.saveSession(currentSession, currentClassRoom.className);
+                        }).setVisible(true));
+
+                        itemReassign.addActionListener(ev -> openDragAndDropDialog(stt, name));
+                        itemDelete.addActionListener(ev -> removeStudentExam(stt, name));
+                        popupMenu.show(e.getComponent(), e.getX(), e.getY());
                     }
                 }
-                if (needsSave && currentSession != null) service.DataManager.saveSession(currentSession, currentClassRoom.className);
-                refreshTable();
-                view.setStatusMessage("Đã chuyển toàn bộ lớp sang mã đề: " + selectedCode);
             }
         });
     }
@@ -514,39 +464,23 @@ public class MainController {
         try {
             java.nio.file.Files.deleteIfExists(new File(imagePath).toPath());
             int dotIndex = imagePath.lastIndexOf('.');
-            if (dotIndex > 0) {
-                String ext = imagePath.substring(dotIndex);
-                java.nio.file.Files.deleteIfExists(new File(imagePath.replace(ext, "_processed" + ext)).toPath());
-            }
-        } catch (Exception ex) {}
+            if (dotIndex > 0) java.nio.file.Files.deleteIfExists(new File(imagePath.replace(imagePath.substring(dotIndex), "_processed" + imagePath.substring(dotIndex))).toPath());
+        } catch (Exception ignored) {}
     }
 
     private void handleStudentDoubleClick(String stt, String name) {
         model.OMRModels.ExamReport report = reportDatabase.get(stt);
-        boolean hasPendingImage = assignedFiles.containsKey(stt);
-
-        if (report != null || hasPendingImage) {
-            String[] options = {
-                    "🔍 Xem chi tiết",
-                    "<html><span style=\"font-family: 'Segoe UI Emoji'\">📁</span> Gán lại ảnh khác</html>",
-                    "<html><span style=\"font-family: 'Segoe UI Emoji'\">❌</span> Xóa bài làm này</html>",
-                    "Hủy bỏ"
-            };
-            int choice = JOptionPane.showOptionDialog(view,
-                    "Học sinh " + name + " đang có ảnh bài làm. Bạn muốn làm gì?",
-                    "Tùy chọn thao tác", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
+        if (report != null || assignedFiles.containsKey(stt)) {
+            String[] options = { "🔍 Xem chi tiết", "<html><span style=\"font-family: 'Segoe UI Emoji'\">📁</span> Gán lại ảnh khác</html>", "<html><span style=\"font-family: 'Segoe UI Emoji'\">❌</span> Xóa bài làm này</html>", "Hủy bỏ" };
+            int choice = JOptionPane.showOptionDialog(view, "Học sinh " + name + " đang có ảnh bài làm. Bạn muốn làm gì?", "Tùy chọn thao tác", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
 
             if (choice == 0) {
                 if (report != null && !"Chờ chấm...".equals(report.statusMessage)) {
                     new WrongAnswerDialog(view, report, currentConfig, () -> {
                         refreshTable();
-                        if (currentSession != null) {
-                            service.DataManager.saveSession(currentSession, currentClassRoom.className);
-                        }
+                        if (currentSession != null) service.DataManager.saveSession(currentSession, currentClassRoom.className);
                     }).setVisible(true);
-                } else {
-                    JOptionPane.showMessageDialog(view, "Bài thi này đang chờ để chấm, chưa có chi tiết để xem!");
-                }
+                } else JOptionPane.showMessageDialog(view, "Bài thi này đang chờ để chấm, chưa có chi tiết để xem!");
             }
             else if (choice == 1) openDragAndDropDialog(stt, name);
             else if (choice == 2) removeStudentExam(stt, name);
@@ -573,17 +507,12 @@ public class MainController {
 
     private void deleteSelectedReport() {
         int[] selectedRows = view.getTblResults().getSelectedRows();
-        if (selectedRows.length == 0) {
-            JOptionPane.showMessageDialog(view, "Vui lòng giữ Ctrl hoặc Shift để chọn các học sinh cần xóa!");
-            return;
-        }
+        if (selectedRows.length == 0) { JOptionPane.showMessageDialog(view, "Vui lòng giữ Ctrl hoặc Shift để chọn các học sinh cần xóa!"); return; }
 
         int confirm = JOptionPane.showConfirmDialog(view, "Hủy kết quả và xóa ảnh của " + selectedRows.length + " học sinh đã chọn?", "Xác nhận", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (confirm == JOptionPane.YES_OPTION) {
-            List<String> sttsToDelete = new ArrayList<>();
-            for (int row : selectedRows) sttsToDelete.add(currentRowStts.get(row));
-
-            for (String stt : sttsToDelete) {
+            for (int row : selectedRows) {
+                String stt = currentRowStts.get(row);
                 model.OMRModels.ExamReport report = reportDatabase.get(stt);
                 if (report != null) deleteImageFiles(report.imagePath);
                 reportDatabase.remove(stt);
@@ -653,9 +582,7 @@ public class MainController {
                 if (type == 1) service.ExcelService.exportExamScoreTable(currentClassRoom, currentSession, path);
                 else service.ExcelService.exportAnswerKey(currentConfig, path);
                 JOptionPane.showMessageDialog(view, "Xuất file thành công!");
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(view, "Lỗi khi xuất file: " + ex.getMessage());
-            }
+            } catch (Exception ex) { JOptionPane.showMessageDialog(view, "Lỗi khi xuất file: " + ex.getMessage()); }
         }
     }
 
@@ -664,23 +591,12 @@ public class MainController {
             view.getTblResults().getCellEditor().stopCellEditing();
         }
 
-        // Tự động quét lại và nạp ảnh cũ vào assignedFiles trước khi bắt đầu chấm
-        for (model.ClassRoom.Student student : currentClassRoom.students) {
-            String stt = String.valueOf(student.stt);
-            if (!assignedFiles.containsKey(stt) && reportDatabase.containsKey(stt)) {
-                model.OMRModels.ExamReport report = reportDatabase.get(stt);
-                String path = (report.imagePath != null) ? report.imagePath : report.originalImagePath;
-                if (path != null) {
-                    File existingFile = new File(path);
-                    if (existingFile.exists()) {
-                        assignedFiles.put(stt, existingFile);
-                    }
-                }
-            }
-        }
-
+        // =====================================================================================
+        // VÙNG SỬA LỖI 4: Gỡ bỏ vòng lặp ép phần mềm chấm lại Toàn Bộ lớp dù họ đã có điểm
+        // Giờ đây nó chỉ lấy các ảnh nằm trong Hàng Chờ để mang đi chấm. Rất nhanh và an toàn.
+        // =====================================================================================
         if (assignedFiles.isEmpty()) {
-            JOptionPane.showMessageDialog(view, "Chưa có ảnh nào được gán! Hãy gán ảnh bài làm trước khi chấm.", "Thiếu thông tin", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(view, "Không có bài nào đang chờ chấm!", "Thông báo", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
 
@@ -689,56 +605,45 @@ public class MainController {
             return;
         }
 
+        String selectedTemplate = (String) view.getCbxTemplate().getSelectedItem();
+
         gradingWorker = new GradingTask(
                 view, currentConfig, currentSession, currentClassRoom,
                 reportDatabase, assignedFiles, studentExamCodes,
+                selectedTemplate,
                 () -> refreshTable()
         );
         gradingWorker.execute();
     }
 
     private void showConnectionDialog() {
-        String myIP = service.LocalServer.getLocalIP();
-        String connectionURL = "http://" + myIP + ":8080";
-
-        // [MỚI]: Đường dẫn tải file APK trực tiếp từ GitHub của bạn
-        // Lưu ý: Đảm bảo đường link này luôn trỏ đến file apk mới nhất, hoặc link release chung.
-        String downloadURL = "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/app-release.apk";
+        String connectionURL = "http://" + service.LocalServer.getLocalIP() + ":8080";
+        String downloadURL = "https://github.com/caoduongle/ChamTracNghiem/releases/download/v2.0.0/app-release.apk";
 
         JDialog dialog = new JDialog(view, "Kết nối & Cài đặt Ứng dụng", true);
         dialog.setLayout(new BorderLayout());
 
-        // Sử dụng JTabbedPane để tạo 2 thẻ (Tabs)
         JTabbedPane tabbedPane = new JTabbedPane();
         tabbedPane.setFont(new Font("Arial", Font.BOLD, 13));
 
-        // ==========================================
-        // TAB 1: KẾT NỐI (Cho máy đã có App)
-        // ==========================================
         JPanel pnlConnect = new JPanel(new BorderLayout(10, 10));
         pnlConnect.setBackground(Color.WHITE);
         JLabel lblInstruction1 = new JLabel("<html><center><font size='4'>Mở App trên điện thoại và quét mã này để kết nối</font><br><b style='color:#007BFF;'>" + connectionURL + "</b></center></html>", SwingConstants.CENTER);
         lblInstruction1.setBorder(BorderFactory.createEmptyBorder(15, 10, 5, 10));
-        JLabel lblQR1 = new JLabel(service.QRService.generateQRCode(connectionURL, 300, 300));
         pnlConnect.add(lblInstruction1, BorderLayout.NORTH);
-        pnlConnect.add(lblQR1, BorderLayout.CENTER);
+        pnlConnect.add(new JLabel(service.QRService.generateQRCode(connectionURL, 300, 300)), BorderLayout.CENTER);
 
-        // ==========================================
-        // TAB 2: TẢI APP (Cho máy chưa có App)
-        // ==========================================
         JPanel pnlDownload = new JPanel(new BorderLayout(10, 10));
-        pnlDownload.setBackground(new Color(245, 250, 255)); // Màu nền hơi xanh nhạt cho khác biệt
+        pnlDownload.setBackground(new Color(245, 250, 255));
         JLabel lblInstruction2 = new JLabel("<html><center><font size='4'>Chưa có App? Dùng <b>Zalo</b> hoặc <b>Camera</b> quét mã này</font><br><span style='color:#28A745;'>để tải và cài đặt ứng dụng lần đầu tiên</span></center></html>", SwingConstants.CENTER);
         lblInstruction2.setBorder(BorderFactory.createEmptyBorder(15, 10, 5, 10));
-        JLabel lblQR2 = new JLabel(service.QRService.generateQRCode(downloadURL, 300, 300));
         pnlDownload.add(lblInstruction2, BorderLayout.NORTH);
-        pnlDownload.add(lblQR2, BorderLayout.CENTER);
+        pnlDownload.add(new JLabel(service.QRService.generateQRCode(downloadURL, 300, 300)), BorderLayout.CENTER);
 
-        // Thêm 2 Tab vào hộp thoại
-        tabbedPane.addTab("🔗 Quét mã Kết nối", pnlConnect);
-        tabbedPane.addTab("📥 Quét để Tải App mới", pnlDownload);
+        // Thay thế đoạn tabbedPane.addTab cũ bằng HTML để hiển thị Emoji chuẩn
+        tabbedPane.addTab("<html><span style='font-family: \"Segoe UI Emoji\"'>🔗</span> Quét mã Kết nối</html>", pnlConnect);
+        tabbedPane.addTab("<html><span style='font-family: \"Segoe UI Emoji\"'>📥</span> Quét để Tải App mới</html>", pnlDownload);
 
-        // Nút Đóng
         JPanel pnlBottom = new JPanel(new FlowLayout(FlowLayout.CENTER));
         JButton btnClose = new JButton("Đóng hộp thoại");
         btnClose.setFont(new Font("Arial", Font.BOLD, 13));
@@ -751,5 +656,32 @@ public class MainController {
         dialog.pack();
         dialog.setLocationRelativeTo(view);
         dialog.setVisible(true);
+    }
+    // =========================================================================
+    // HÀM HIỂN THỊ ẢNH XEM TRƯỚC MẪU PHIẾU
+    // =========================================================================
+    private void updateTemplatePreview(String templateName) {
+        try {
+            // Quy ước: Ảnh mẫu phiếu đặt trong thư mục "templates" ở thư mục gốc của dự án
+            // Tên ảnh phải trùng với tên trong ComboBox (VD: BGD4.jpg, QM.jpg)
+            File imgFile = new File("data/template/" + templateName + ".jpg");
+
+            if (imgFile.exists()) {
+                ImageIcon originalIcon = new ImageIcon(imgFile.getAbsolutePath());
+                Image img = originalIcon.getImage();
+
+                // Thu nhỏ ảnh cho vừa khít với khung 200x270 pixel mà vẫn giữ độ nét
+                Image scaledImg = img.getScaledInstance(200, 270, Image.SCALE_SMOOTH);
+
+                view.getLblTemplatePreview().setIcon(new ImageIcon(scaledImg));
+                view.getLblTemplatePreview().setText(""); // Ẩn dòng chữ đi
+            } else {
+                view.getLblTemplatePreview().setIcon(null);
+                view.getLblTemplatePreview().setText("<html><center>Không tìm thấy ảnh<br><b>" + templateName + ".jpg</b></center></html>");
+            }
+        } catch (Exception ex) {
+            view.getLblTemplatePreview().setIcon(null);
+            view.getLblTemplatePreview().setText("Lỗi nạp ảnh");
+        }
     }
 }
