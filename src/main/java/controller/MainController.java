@@ -40,6 +40,7 @@ public class MainController {
         startGlobalServer();
         initController();
         initApp();
+        service.TemplateSyncService.syncTemplates();
         if (DataManager.getAutoCleanupMode() == 1) DataManager.performSilentDeepCleanup();
     }
 

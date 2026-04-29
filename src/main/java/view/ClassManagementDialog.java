@@ -215,7 +215,7 @@ public class ClassManagementDialog extends JDialog {
 
     private void showConnectionDialog() {
         String connectionURL = "http://" + service.LocalServer.getLocalIP() + ":8080";
-        String downloadURL = "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/app-release.apk";
+        String downloadURL = "https://github.com/caoduongle/ChamTracNghiem/releases/download/v2.0.0/app-release.apk";
 
         JDialog dialog = new JDialog(this, "Kết nối & Cài đặt Ứng dụng", true);
         dialog.setLayout(new BorderLayout());
