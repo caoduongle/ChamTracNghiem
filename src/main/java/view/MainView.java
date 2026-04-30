@@ -47,9 +47,9 @@ public class MainView extends JFrame {
 
         // Khởi tạo các Component
         btnConnectPhone = createStyledButton(
-                "<html><span style='font-family: \"Segoe UI Emoji\"'>📱</span> Kết nối Điện thoại</html>",
-                new Color(0, 123, 255),
-                Color.WHITE
+                "<html><span style='font-family: \"Segoe UI Emoji\"'>📱</span> Hướng dẫn kết nối App</html>",
+                new Color(240, 240, 240), // Nền xám nhạt
+                Color.BLACK               // Chữ đen
         );
         btnStartGrading = createStyledButton("2. Bắt đầu chấm", new Color(40, 167, 69), Color.WHITE);
 
@@ -59,7 +59,6 @@ public class MainView extends JFrame {
         btnStopGrading.setEnabled(false);
         btnStopGrading.setForeground(Color.RED);
 
-        // [CẬP NHẬT]: Đã thêm BGD4.1 vào danh sách
         cbxTemplate = new JComboBox<>(new String[]{"BGD4", "BGD4.1", "BGD3", "QM", "TNMAKER"});
         cbxSortResults = new JComboBox<>(new String[]{
                 "Sắp xếp: Theo STT (Mặc định)",

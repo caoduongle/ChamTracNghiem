@@ -8,9 +8,13 @@ import model.ClassRoom;
 import java.io.*;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class LocalServer {
@@ -56,6 +60,44 @@ public class LocalServer {
         if (server != null) { server.stop(0); isRunning = false; }
     }
 
+    // =========================================================================
+    // CÁC HÀM TIỆN ÍCH (UTILITIES) - GIÚP CODE NGẮN GỌN VÀ CHỐNG LỖI
+    // =========================================================================
+
+    private static String getHeaderSafely(HttpExchange exchange, String headerName) {
+        String value = exchange.getRequestHeaders().getFirst(headerName);
+        if (value == null || value.trim().isEmpty()) return "";
+        try {
+            return URLDecoder.decode(value, StandardCharsets.UTF_8.name());
+        } catch (UnsupportedEncodingException e) {
+            return value;
+        }
+    }
+
+    private static String toJsonStringArray(List<String> list) {
+        if (list == null || list.isEmpty()) return "[]";
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < list.size(); i++) {
+            sb.append("\"").append(list.get(i).replace("\"", "\\\"")).append("\"");
+            if (i < list.size() - 1) sb.append(",");
+        }
+        sb.append("]");
+        return sb.toString();
+    }
+
+    private static void sendResponse(HttpExchange exchange, int code, String text) throws IOException {
+        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+        // Thêm CORS để bảo mật mạng và cho phép mọi thiết bị truy cập
+        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+        exchange.sendResponseHeaders(code, bytes.length);
+        try (OutputStream os = exchange.getResponseBody()) { os.write(bytes); }
+    }
+
+    // =========================================================================
+    // HANDLERS XỬ LÝ API
+    // =========================================================================
+
     static class TemplatesHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -63,18 +105,13 @@ public class LocalServer {
             if (!dir.exists()) dir.mkdirs();
 
             File[] files = dir.listFiles((d, name) -> name.endsWith(".jpg") || name.endsWith(".png"));
-
-            StringBuilder json = new StringBuilder("[");
+            List<String> templates = new ArrayList<>();
             if (files != null) {
-                for (int i = 0; i < files.length; i++) {
-                    String name = files[i].getName();
-                    String id = name.substring(0, name.lastIndexOf('.'));
-                    json.append("\"").append(id).append("\"");
-                    if (i < files.length - 1) json.append(",");
+                for (File file : files) {
+                    templates.add(file.getName().substring(0, file.getName().lastIndexOf('.')));
                 }
             }
-            json.append("]");
-            sendResponse(exchange, 200, json.toString());
+            sendResponse(exchange, 200, toJsonStringArray(templates));
         }
     }
 
@@ -82,8 +119,8 @@ public class LocalServer {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             Map<String, String> params = getQueryParams(exchange);
-            String cName = params.get("class");
-            String eName = params.get("exam");
+            String cName = params.getOrDefault("class", "");
+            String eName = params.getOrDefault("exam", "");
 
             String tId = java.util.prefs.Preferences.userRoot().node("ChamTracNghiem_N7").get("TEMPLATE_" + cName + "_" + eName, "BGD4");
             sendResponse(exchange, 200, tId);
@@ -91,14 +128,19 @@ public class LocalServer {
     }
 
     static class SetTemplateHandler implements HttpHandler {
-        private ServerSyncListener listener;
+        private final ServerSyncListener listener;
         public SetTemplateHandler(ServerSyncListener l) { this.listener = l; }
 
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            String cName = URLDecoder.decode(exchange.getRequestHeaders().getFirst("X-Class-Name"), StandardCharsets.UTF_8.name());
-            String eName = URLDecoder.decode(exchange.getRequestHeaders().getFirst("X-Exam-Name"), StandardCharsets.UTF_8.name());
-            String tId = URLDecoder.decode(exchange.getRequestHeaders().getFirst("X-Template-ID"), StandardCharsets.UTF_8.name());
+            String cName = getHeaderSafely(exchange, "X-Class-Name");
+            String eName = getHeaderSafely(exchange, "X-Exam-Name");
+            String tId = getHeaderSafely(exchange, "X-Template-ID");
+
+            if (cName.isEmpty() || eName.isEmpty() || tId.isEmpty()) {
+                sendResponse(exchange, 400, "Thiếu tham số cấu hình mẫu phiếu");
+                return;
+            }
 
             java.util.prefs.Preferences.userRoot().node("ChamTracNghiem_N7").put("TEMPLATE_" + cName + "_" + eName, tId);
             sendResponse(exchange, 200, "OK");
@@ -111,12 +153,13 @@ public class LocalServer {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             Map<String, String> params = getQueryParams(exchange);
-            String id = params.get("id");
+            String id = params.getOrDefault("id", "");
 
             File imgFile = new File("data/templates/" + id + ".jpg");
             if (!imgFile.exists()) imgFile = new File("data/templates/" + id + ".png");
 
             if (imgFile.exists()) {
+                exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
                 exchange.getResponseHeaders().set("Content-Type", "image/jpeg");
                 exchange.sendResponseHeaders(200, imgFile.length());
                 try (OutputStream os = exchange.getResponseBody(); FileInputStream fis = new FileInputStream(imgFile)) {
@@ -136,28 +179,23 @@ public class LocalServer {
             File classesDir = new File("data/classes");
             File[] folders = classesDir.listFiles(f -> f.isDirectory() && !f.getName().equalsIgnoreCase("trash"));
 
-            StringBuilder json = new StringBuilder("[");
+            List<String> classNames = new ArrayList<>();
             if (folders != null) {
-                for (int i = 0; i < folders.length; i++) {
-                    json.append("\"").append(folders[i].getName()).append("\"");
-                    if (i < folders.length - 1) json.append(",");
-                }
+                for (File folder : folders) classNames.add(folder.getName());
             }
-            json.append("]");
-            sendResponse(exchange, 200, json.toString());
+            sendResponse(exchange, 200, toJsonStringArray(classNames));
         }
     }
 
     static class CreateClassHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            String classNameRaw = exchange.getRequestHeaders().getFirst("X-Class-Name");
-            if (classNameRaw == null) {
+            String className = getHeaderSafely(exchange, "X-Class-Name");
+            if (className.isEmpty()) {
                 sendResponse(exchange, 400, "Bad Request");
                 return;
             }
 
-            String className = URLDecoder.decode(classNameRaw, StandardCharsets.UTF_8.name());
             File newClassDir = new File("data/classes/" + className);
             if (!newClassDir.exists()) {
                 newClassDir.mkdirs();
@@ -173,7 +211,7 @@ public class LocalServer {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             Map<String, String> params = getQueryParams(exchange);
-            String className = params.get("class");
+            String className = params.getOrDefault("class", "");
 
             ClassRoom cr = service.DataManager.loadClass(className);
             StringBuilder json = new StringBuilder("[");
@@ -193,32 +231,23 @@ public class LocalServer {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             Map<String, String> params = getQueryParams(exchange);
-            String className = params.get("class");
+            String className = params.getOrDefault("class", "");
 
-            java.util.List<String> exams = service.DataManager.listSavedExams(className);
-            StringBuilder json = new StringBuilder("[");
-            for (int i = 0; i < exams.size(); i++) {
-                json.append("\"").append(exams.get(i)).append("\"");
-                if (i < exams.size() - 1) json.append(",");
-            }
-            json.append("]");
-            sendResponse(exchange, 200, json.toString());
+            List<String> exams = service.DataManager.listSavedExams(className);
+            sendResponse(exchange, 200, toJsonStringArray(exams));
         }
     }
 
     static class CreateExamHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            String classNameRaw = exchange.getRequestHeaders().getFirst("X-Class-Name");
-            String examNameRaw = exchange.getRequestHeaders().getFirst("X-Exam-Name");
+            String className = getHeaderSafely(exchange, "X-Class-Name");
+            String examName = getHeaderSafely(exchange, "X-Exam-Name");
 
-            if (classNameRaw == null || examNameRaw == null) {
+            if (className.isEmpty() || examName.isEmpty()) {
                 sendResponse(exchange, 400, "Missing Info");
                 return;
             }
-
-            String className = URLDecoder.decode(classNameRaw, StandardCharsets.UTF_8.name());
-            String examName = URLDecoder.decode(examNameRaw, StandardCharsets.UTF_8.name());
 
             File examDir = new File("data/classes/" + className + "/images/" + examName);
             File examSessionFile = new File("data/classes/" + className + "/exams/" + examName + ".dat");
@@ -238,34 +267,34 @@ public class LocalServer {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             Map<String, String> params = getQueryParams(exchange);
-            String className = params.get("class");
-            String examName = params.get("exam");
+            String className = params.getOrDefault("class", "");
+            String examName = params.getOrDefault("exam", "");
 
             model.ExamSession session = service.DataManager.loadSession(examName, className);
-            StringBuilder json = new StringBuilder("[");
+            List<String> validCodes = new ArrayList<>();
 
             if (session != null && session.getConfig() != null && session.getConfig().getExamCodes() != null) {
-                java.util.List<String> codes = new java.util.ArrayList<>(session.getConfig().getExamCodes());
-
-                // [VÁ LỖI]: Bỏ qua chữ "Mặc định" để điện thoại không bao giờ nhìn thấy
-                codes.removeIf(c -> c == null || c.trim().isEmpty() || c.trim().equalsIgnoreCase("Mặc định") || c.trim().equalsIgnoreCase("Mặc định (Không mã)"));
-
-                for (int i = 0; i < codes.size(); i++) {
-                    json.append("\"").append(codes.get(i)).append("\"");
-                    if (i < codes.size() - 1) json.append(",");
+                for (String c : session.getConfig().getExamCodes()) {
+                    if (c != null && !c.trim().isEmpty() && !c.trim().equalsIgnoreCase("Mặc định") && !c.trim().equalsIgnoreCase("Mặc định (Không mã)")) {
+                        validCodes.add(c);
+                    }
                 }
             }
-            json.append("]");
-            sendResponse(exchange, 200, json.toString());
+            sendResponse(exchange, 200, toJsonStringArray(validCodes));
         }
     }
 
     static class CreateExamCodeHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            String className = URLDecoder.decode(exchange.getRequestHeaders().getFirst("X-Class-Name"), StandardCharsets.UTF_8.name());
-            String examName = URLDecoder.decode(exchange.getRequestHeaders().getFirst("X-Exam-Name"), StandardCharsets.UTF_8.name());
-            String newCode = URLDecoder.decode(exchange.getRequestHeaders().getFirst("X-New-Code"), StandardCharsets.UTF_8.name());
+            String className = getHeaderSafely(exchange, "X-Class-Name");
+            String examName = getHeaderSafely(exchange, "X-Exam-Name");
+            String newCode = getHeaderSafely(exchange, "X-New-Code");
+
+            if (className.isEmpty() || examName.isEmpty() || newCode.isEmpty()) {
+                sendResponse(exchange, 400, "Missing Parameters");
+                return;
+            }
 
             model.ExamSession session = service.DataManager.loadSession(examName, className);
             if (session != null) {
@@ -282,26 +311,21 @@ public class LocalServer {
     }
 
     static class UploadHandler implements HttpHandler {
-        private ServerSyncListener listener;
+        private final ServerSyncListener listener;
         public UploadHandler(ServerSyncListener listener) { this.listener = listener; }
 
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            String classNameRaw = exchange.getRequestHeaders().getFirst("X-Class-Name");
-            String examNameRaw = exchange.getRequestHeaders().getFirst("X-Exam-Name");
-            String stt = exchange.getRequestHeaders().getFirst("X-Student-STT");
-            String templateId = exchange.getRequestHeaders().getFirst("X-Template-ID");
+            String className = getHeaderSafely(exchange, "X-Class-Name");
+            String examName = getHeaderSafely(exchange, "X-Exam-Name");
+            String stt = getHeaderSafely(exchange, "X-Student-STT");
+            String templateId = getHeaderSafely(exchange, "X-Template-ID");
+            String examCode = getHeaderSafely(exchange, "X-Exam-Code"); // Có thể rỗng, không sao
 
-            String examCodeRaw = exchange.getRequestHeaders().getFirst("X-Exam-Code");
-            String examCode = (examCodeRaw != null) ? URLDecoder.decode(examCodeRaw, StandardCharsets.UTF_8.name()) : "";
-
-            if (classNameRaw == null || examNameRaw == null || stt == null) {
+            if (className.isEmpty() || examName.isEmpty() || stt.isEmpty()) {
                 sendResponse(exchange, 400, "Incomplete Metadata");
                 return;
             }
-
-            String className = URLDecoder.decode(classNameRaw, StandardCharsets.UTF_8.name());
-            String examName = URLDecoder.decode(examNameRaw, StandardCharsets.UTF_8.name());
 
             File saveDir = new File("data/classes/" + className + "/images/" + examName);
             if (!saveDir.exists()) saveDir.mkdirs();
@@ -328,36 +352,33 @@ public class LocalServer {
                 String[] entry = param.split("=");
                 if (entry.length > 1) {
                     try { result.put(entry[0], URLDecoder.decode(entry[1], StandardCharsets.UTF_8.name())); }
-                    catch(Exception e){}
+                    catch(Exception ignored){}
                 }
             }
         }
         return result;
     }
 
-    private static void sendResponse(HttpExchange exchange, int code, String text) throws IOException {
-        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
-        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
-        exchange.sendResponseHeaders(code, bytes.length);
-        try (OutputStream os = exchange.getResponseBody()) { os.write(bytes); }
-    }
-
     public static String getLocalIP() {
         try {
-            java.util.Enumeration<java.net.NetworkInterface> interfaces = java.net.NetworkInterface.getNetworkInterfaces();
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
             while (interfaces.hasMoreElements()) {
-                java.net.NetworkInterface iface = interfaces.nextElement();
-                if (iface.isLoopback() || !iface.isUp() || iface.isVirtual()) continue;
-                java.util.Enumeration<java.net.InetAddress> addresses = iface.getInetAddresses();
+                NetworkInterface iface = interfaces.nextElement();
+                String name = iface.getDisplayName().toLowerCase();
+
+                // [CHỐT CHẶN BẢO VỆ JAVA 8]: Không dùng iface.isVirtual() vì sẽ gây crash trên Java 8
+                if (iface.isLoopback() || !iface.isUp() || name.contains("virtual") || name.contains("vmware")) continue;
+
+                Enumeration<InetAddress> addresses = iface.getInetAddresses();
                 while (addresses.hasMoreElements()) {
-                    java.net.InetAddress addr = addresses.nextElement();
+                    InetAddress addr = addresses.nextElement();
                     if (addr instanceof java.net.Inet4Address) {
                         String ip = addr.getHostAddress();
                         if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) return ip;
                     }
                 }
             }
-        } catch (Exception e) {}
+        } catch (Exception ignored) {}
         return "127.0.0.1";
     }
 }

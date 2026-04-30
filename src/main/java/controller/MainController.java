@@ -4,6 +4,7 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -163,9 +164,6 @@ public class MainController {
         }
     }
 
-    // =====================================================================================
-    // VÙNG SỬA LỖI 1: Chỉ cho file vào danh sách "Chờ chấm" nếu nó thực sự chưa được chấm
-    // =====================================================================================
     private void loadSessionToUI() {
         if (currentSession != null && currentSession.getReports() != null) {
             studentExamCodes.clear();
@@ -179,7 +177,6 @@ public class MainController {
                 if (path != null) {
                     File imgFile = new File(path);
                     if (imgFile.exists()) {
-                        // CHỈ cho vào danh sách chờ chấm nếu trạng thái đang báo cần chấm
                         boolean isWaiting = report.statusMessage == null ||
                                 report.statusMessage.contains("Chờ chấm") ||
                                 report.statusMessage.contains("Đã đổi mã");
@@ -215,8 +212,6 @@ public class MainController {
 
         view.getCbxTemplate().addActionListener(e -> {
             String selected = (String) view.getCbxTemplate().getSelectedItem();
-
-            // [THÊM MỚI]: Gọi hàm thay đổi ảnh hiển thị ngay khi người dùng chọn
             updateTemplatePreview(selected);
 
             if (currentClassRoom != null && currentSession != null) {
@@ -224,12 +219,17 @@ public class MainController {
                         .put("TEMPLATE_" + currentClassRoom.className + "_" + currentSession.getExamName(), selected);
             }
         });
+        // Thêm vào trong hàm initController()
+        view.getLblTemplatePreview().setCursor(new Cursor(Cursor.HAND_CURSOR)); // Hiển thị hình bàn tay khi di chuột vào
+        view.getLblTemplatePreview().addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                String selected = (String) view.getCbxTemplate().getSelectedItem();
+                showFullScreenTemplate(selected);
+            }
+        });
 
-        // =====================================================================================
-        // VÙNG SỬA LỖI 2: Ngăn không cho bảng tự động kích hoạt chức năng Reset điểm khi nạp
-        // =====================================================================================
         view.getTblResults().getModel().addTableModelListener(e -> {
-            // Phải kiểm tra chính xác là hành động UPDATE từ cột 3 (Mã Đề) do người dùng thao tác
             if (e.getType() == javax.swing.event.TableModelEvent.UPDATE && e.getColumn() == 3) {
                 int row = e.getFirstRow();
                 if (row != -1 && row < currentRowStts.size()) {
@@ -241,19 +241,16 @@ public class MainController {
                         String oldCode = (report.examCode == null || report.examCode.trim().isEmpty()) ? "Mặc định" : report.examCode;
                         String newCode = (selectedCode == null || selectedCode.trim().isEmpty()) ? "Mặc định" : selectedCode;
 
-                        // CHỈ Reset nếu mã cũ và mã mới thực sự KHÁC NHAU
                         if (!oldCode.equals(newCode)) {
                             report.examCode = newCode.equals("Mặc định") ? null : newCode;
                             studentExamCodes.put(stt, report.examCode);
                             report.statusMessage = "<html><span style=\"font-family: 'Segoe UI Emoji'\">⚠️</span> Đã đổi mã, cần chấm lại</html>";
 
-                            // Ném ảnh lại vào danh sách Chờ Chấm
                             String path = (report.originalImagePath != null) ? report.originalImagePath : report.imagePath;
                             if (path != null) assignedFiles.put(stt, new File(path));
 
                             if (currentSession != null) service.DataManager.saveSession(currentSession, currentClassRoom.className);
 
-                            // Yêu cầu Table vẽ lại ngay để giấu điểm số đi
                             SwingUtilities.invokeLater(() -> refreshTable());
                         }
                     }
@@ -366,9 +363,6 @@ public class MainController {
         });
     }
 
-    // =====================================================================================
-    // VÙNG SỬA LỖI 3: Đổi mã đề hàng loạt phải tự động ném ảnh vào danh sách chờ
-    // =====================================================================================
     private void applyExamCodeChange(int[] targetRows, String title, String successMsg) {
         if (currentConfig == null || currentConfig.getExamCodes().isEmpty()) {
             JOptionPane.showMessageDialog(view, "Vui lòng cài đặt đáp án trước!"); return;
@@ -389,7 +383,6 @@ public class MainController {
                     report.examCode = selectedCode.equals("Mặc định") ? null : selectedCode;
                     report.statusMessage = "<html><span style=\"font-family: 'Segoe UI Emoji'\">⚠️</span> Đã đổi mã, cần chấm lại</html>";
 
-                    // Ném lại vào hàng chờ chấm để mất điểm ngay lập tức trên UI
                     String path = (report.originalImagePath != null) ? report.originalImagePath : report.imagePath;
                     if (path != null) assignedFiles.put(stt, new File(path));
 
@@ -592,10 +585,6 @@ public class MainController {
             view.getTblResults().getCellEditor().stopCellEditing();
         }
 
-        // =====================================================================================
-        // VÙNG SỬA LỖI 4: Gỡ bỏ vòng lặp ép phần mềm chấm lại Toàn Bộ lớp dù họ đã có điểm
-        // Giờ đây nó chỉ lấy các ảnh nằm trong Hàng Chờ để mang đi chấm. Rất nhanh và an toàn.
-        // =====================================================================================
         if (assignedFiles.isEmpty()) {
             JOptionPane.showMessageDialog(view, "Không có bài nào đang chờ chấm!", "Thông báo", JOptionPane.INFORMATION_MESSAGE);
             return;
@@ -617,65 +606,70 @@ public class MainController {
         gradingWorker.execute();
     }
 
+    // =========================================================================
+    // HÀM HIỆN UI KẾT NỐI THEO CHUẨN MỚI
+    // =========================================================================
     private void showConnectionDialog() {
-        String connectionURL = "http://" + service.LocalServer.getLocalIP() + ":8080";
         String downloadURL = "https://github.com/caoduongle/ChamTracNghiem/releases/download/v2.0.0/app-release.apk";
 
-        JDialog dialog = new JDialog(view, "Kết nối & Cài đặt Ứng dụng", true);
+        // Lưu ý: Đổi chữ 'view' thành 'this' nếu bạn dán vào StartupDialog hoặc ClassManagementDialog
+        JDialog dialog = new JDialog(view, "Hướng dẫn kết nối Ứng dụng Điện thoại", true);
         dialog.setLayout(new BorderLayout());
-
-        JTabbedPane tabbedPane = new JTabbedPane();
-        tabbedPane.setFont(new Font("Arial", Font.BOLD, 13));
 
         JPanel pnlConnect = new JPanel(new BorderLayout(10, 10));
         pnlConnect.setBackground(Color.WHITE);
-        JLabel lblInstruction1 = new JLabel("<html><center><font size='4'>Mở App trên điện thoại và quét mã này để kết nối</font><br><b style='color:#007BFF;'>" + connectionURL + "</b></center></html>", SwingConstants.CENTER);
-        lblInstruction1.setBorder(BorderFactory.createEmptyBorder(15, 10, 5, 10));
-        pnlConnect.add(lblInstruction1, BorderLayout.NORTH);
-        pnlConnect.add(new JLabel(service.QRService.generateQRCode(connectionURL, 300, 300)), BorderLayout.CENTER);
 
-        JPanel pnlDownload = new JPanel(new BorderLayout(10, 10));
-        pnlDownload.setBackground(new Color(245, 250, 255));
-        JLabel lblInstruction2 = new JLabel("<html><center><font size='4'>Chưa có App? Dùng <b>Zalo</b> hoặc <b>Camera</b> quét mã này</font><br><span style='color:#28A745;'>để tải và cài đặt ứng dụng lần đầu tiên</span></center></html>", SwingConstants.CENTER);
-        lblInstruction2.setBorder(BorderFactory.createEmptyBorder(15, 10, 5, 10));
-        pnlDownload.add(lblInstruction2, BorderLayout.NORTH);
-        pnlDownload.add(new JLabel(service.QRService.generateQRCode(downloadURL, 300, 300)), BorderLayout.CENTER);
+        // --- NỬA TRÊN: HƯỚNG DẪN KẾT NỐI LAN ---
+        JLabel lblInstruction = new JLabel("<html><center><font size='4'>Mở App trên điện thoại và bấm nút<br><b style='color:#007BFF;'>🔍 DÒ TÌM MÁY TÍNH</b><br>để tự động kết nối qua mạng LAN!</font></center></html>", SwingConstants.CENTER);
+        lblInstruction.setBorder(BorderFactory.createEmptyBorder(20, 20, 10, 20));
+        pnlConnect.add(lblInstruction, BorderLayout.NORTH);
 
-        // Thay thế đoạn tabbedPane.addTab cũ bằng HTML để hiển thị Emoji chuẩn
-        tabbedPane.addTab("<html><span style='font-family: \"Segoe UI Emoji\"'>🔗</span> Quét mã Kết nối</html>", pnlConnect);
-        tabbedPane.addTab("<html><span style='font-family: \"Segoe UI Emoji\"'>📥</span> Quét để Tải App mới</html>", pnlDownload);
+        // --- NỬA DƯỚI: MÃ QR ĐỂ TẢI APP ---
+        JPanel pnlDownload = new JPanel(new BorderLayout());
+        pnlDownload.setBackground(Color.WHITE);
+        JLabel lblDownloadText = new JLabel("<html><center><i>Chưa có App? Dùng Zalo hoặc Camera quét mã dưới đây để tải về:</i></center></html>", SwingConstants.CENTER);
+        pnlDownload.add(lblDownloadText, BorderLayout.NORTH);
 
+        try {
+            // Tạo mã QR kích thước 220x220 cho link tải APK
+            JLabel lblQR = new JLabel(service.QRService.generateQRCode(downloadURL, 220, 220));
+            lblQR.setHorizontalAlignment(SwingConstants.CENTER);
+            pnlDownload.add(lblQR, BorderLayout.CENTER);
+        } catch (Exception e) {
+            pnlDownload.add(new JLabel("Lỗi tạo mã QR", SwingConstants.CENTER), BorderLayout.CENTER);
+        }
+
+        pnlConnect.add(pnlDownload, BorderLayout.CENTER);
+
+        // --- NÚT ĐÓNG ---
         JPanel pnlBottom = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        pnlBottom.setBackground(Color.WHITE);
         JButton btnClose = new JButton("Đóng hộp thoại");
         btnClose.setFont(new Font("Arial", Font.BOLD, 13));
         btnClose.addActionListener(e -> dialog.dispose());
         pnlBottom.add(btnClose);
 
-        dialog.add(tabbedPane, BorderLayout.CENTER);
+        dialog.add(pnlConnect, BorderLayout.CENTER);
         dialog.add(pnlBottom, BorderLayout.SOUTH);
 
-        dialog.pack();
+        dialog.setSize(450, 480);
+
+        // Lưu ý: Đổi chữ 'view' thành 'this' nếu bạn dán vào StartupDialog hoặc ClassManagementDialog
         dialog.setLocationRelativeTo(view);
         dialog.setVisible(true);
     }
-    // =========================================================================
-    // HÀM HIỂN THỊ ẢNH XEM TRƯỚC MẪU PHIẾU
-    // =========================================================================
+
     private void updateTemplatePreview(String templateName) {
         try {
-            // Quy ước: Ảnh mẫu phiếu đặt trong thư mục "templates" ở thư mục gốc của dự án
-            // Tên ảnh phải trùng với tên trong ComboBox (VD: BGD4.jpg, QM.jpg)
-            File imgFile = new File("data/template/" + templateName + ".jpg");
+            File imgFile = new File("data/templates/" + templateName + ".jpg");
 
             if (imgFile.exists()) {
                 ImageIcon originalIcon = new ImageIcon(imgFile.getAbsolutePath());
                 Image img = originalIcon.getImage();
-
-                // Thu nhỏ ảnh cho vừa khít với khung 200x270 pixel mà vẫn giữ độ nét
                 Image scaledImg = img.getScaledInstance(200, 270, Image.SCALE_SMOOTH);
 
                 view.getLblTemplatePreview().setIcon(new ImageIcon(scaledImg));
-                view.getLblTemplatePreview().setText(""); // Ẩn dòng chữ đi
+                view.getLblTemplatePreview().setText("");
             } else {
                 view.getLblTemplatePreview().setIcon(null);
                 view.getLblTemplatePreview().setText("<html><center>Không tìm thấy ảnh<br><b>" + templateName + ".jpg</b></center></html>");
@@ -683,6 +677,70 @@ public class MainController {
         } catch (Exception ex) {
             view.getLblTemplatePreview().setIcon(null);
             view.getLblTemplatePreview().setText("Lỗi nạp ảnh");
+        }
+    }
+    private double currentScale = 1.0; // Tỉ lệ zoom hiện tại
+
+    private void showFullScreenTemplate(String templateName) {
+        // 1. Tải ảnh gốc
+        File imgFile = new File("data/templates/" + templateName + ".jpg");
+        if (!imgFile.exists()) imgFile = new File("data/templates/" + templateName + ".png");
+        if (!imgFile.exists()) return;
+
+        try {
+            final java.awt.image.BufferedImage originalImage = javax.imageio.ImageIO.read(imgFile);
+            currentScale = 0.5; // Bắt đầu ở mức 50% để không bị quá to
+
+            // 2. Khởi tạo Dialog
+            JDialog dialog = new JDialog(view, "Xem mẫu phiếu (Cuộn chuột để Zoom): " + templateName, true);
+            dialog.setLayout(new BorderLayout());
+
+            JLabel lblFull = new JLabel();
+            lblFull.setHorizontalAlignment(SwingConstants.CENTER);
+
+            // Hàm cập nhật ảnh theo tỉ lệ zoom
+            java.util.function.Consumer<Double> updateImage = (scale) -> {
+                int newW = (int) (originalImage.getWidth() * scale);
+                int newH = (int) (originalImage.getHeight() * scale);
+                Image scaled = originalImage.getScaledInstance(newW, newH, Image.SCALE_SMOOTH);
+                lblFull.setIcon(new ImageIcon(scaled));
+            };
+
+            // Hiển thị ảnh lần đầu
+            updateImage.accept(currentScale);
+
+            JScrollPane scroll = new JScrollPane(lblFull);
+            scroll.getVerticalScrollBar().setUnitIncrement(16);
+            dialog.add(scroll, BorderLayout.CENTER);
+
+            // 3. Xử lý Zoom bằng cuộn chuột (Ctrl + Cuộn chuột)
+            lblFull.addMouseWheelListener(e -> {
+                if (e.isControlDown()) { // Chỉ zoom khi giữ phím Ctrl (giống các phần mềm đồ họa)
+                    if (e.getWheelRotation() < 0) currentScale += 0.1; // Cuộn lên = Phóng to
+                    else if (currentScale > 0.2) currentScale -= 0.1; // Cuộn xuống = Thu nhỏ
+                } else {
+                    // Nếu không giữ Ctrl thì cho phép cuộn trang bình thường
+                    scroll.dispatchEvent(e);
+                    return;
+                }
+                updateImage.accept(currentScale);
+            });
+
+            // 4. Click chuột để đóng
+            lblFull.addMouseListener(new java.awt.event.MouseAdapter() {
+                @Override
+                public void mouseClicked(java.awt.event.MouseEvent e) {
+                    if (!e.isControlDown()) dialog.dispose();
+                }
+            });
+
+            // Thiết lập kích thước cửa sổ ban đầu
+            dialog.setSize(1000, 800);
+            dialog.setLocationRelativeTo(view);
+            dialog.setVisible(true);
+
+        } catch (IOException ex) {
+            ex.printStackTrace();
         }
     }
 }

@@ -108,10 +108,8 @@ public class StartupDialog extends JDialog {
         btnBackToClass = new JButton("⬅ Trở lại Chọn Lớp");
         btnBackToClass.setForeground(new Color(200, 50, 0));
 
-        // [MỚI]
-        btnConnectPhone = new JButton("📱 Kết nối Điện thoại");
-        btnConnectPhone.setBackground(new Color(0, 123, 255));
-        btnConnectPhone.setForeground(Color.WHITE);
+        btnConnectPhone = new JButton("📱 Hướng dẫn kết nối App");
+        btnConnectPhone.setBackground(new Color(240, 240, 240));
 
         pnlBtns.add(btnConnectPhone); pnlBtns.add(btnOpen);
         pnlBtns.add(btnNew); pnlBtns.add(btnRename);
@@ -232,44 +230,51 @@ public class StartupDialog extends JDialog {
     }
 
     private void showConnectionDialog() {
-        String connectionURL = "http://" + service.LocalServer.getLocalIP() + ":8080";
         String downloadURL = "https://github.com/caoduongle/ChamTracNghiem/releases/download/v2.0.0/app-release.apk";
 
-
-        JDialog dialog = new JDialog(this, "Kết nối & Cài đặt Ứng dụng", true);
+        // Lưu ý: Đổi chữ 'view' thành 'this' nếu bạn dán vào StartupDialog hoặc ClassManagementDialog
+        JDialog dialog = new JDialog(this, "Hướng dẫn kết nối Ứng dụng Điện thoại", true);
         dialog.setLayout(new BorderLayout());
-
-        JTabbedPane tabbedPane = new JTabbedPane();
-        tabbedPane.setFont(new Font("Arial", Font.BOLD, 13));
 
         JPanel pnlConnect = new JPanel(new BorderLayout(10, 10));
         pnlConnect.setBackground(Color.WHITE);
-        JLabel lblInstruction1 = new JLabel("<html><center><font size='4'>Mở App trên điện thoại và quét mã này để kết nối</font><br><b style='color:#007BFF;'>" + connectionURL + "</b></center></html>", SwingConstants.CENTER);
-        lblInstruction1.setBorder(BorderFactory.createEmptyBorder(15, 10, 5, 10));
-        pnlConnect.add(lblInstruction1, BorderLayout.NORTH);
-        pnlConnect.add(new JLabel(service.QRService.generateQRCode(connectionURL, 300, 300)), BorderLayout.CENTER);
 
-        JPanel pnlDownload = new JPanel(new BorderLayout(10, 10));
-        pnlDownload.setBackground(new Color(245, 250, 255));
-        JLabel lblInstruction2 = new JLabel("<html><center><font size='4'>Chưa có App? Dùng <b>Zalo</b> hoặc <b>Camera</b> quét mã này</font><br><span style='color:#28A745;'>để tải và cài đặt ứng dụng lần đầu tiên</span></center></html>", SwingConstants.CENTER);
-        lblInstruction2.setBorder(BorderFactory.createEmptyBorder(15, 10, 5, 10));
-        pnlDownload.add(lblInstruction2, BorderLayout.NORTH);
-        pnlDownload.add(new JLabel(service.QRService.generateQRCode(downloadURL, 300, 300)), BorderLayout.CENTER);
+        // --- NỬA TRÊN: HƯỚNG DẪN KẾT NỐI LAN ---
+        JLabel lblInstruction = new JLabel("<html><center><font size='4'>Mở App trên điện thoại và bấm nút<br><b style='color:#007BFF;'>🔍 DÒ TÌM MÁY TÍNH</b><br>để tự động kết nối qua mạng LAN!</font></center></html>", SwingConstants.CENTER);
+        lblInstruction.setBorder(BorderFactory.createEmptyBorder(20, 20, 10, 20));
+        pnlConnect.add(lblInstruction, BorderLayout.NORTH);
 
-        // Sử dụng HTML để hiển thị Emoji chuẩn xác
-        tabbedPane.addTab("<html><span style='font-family: \"Segoe UI Emoji\"'>🔗</span> Quét mã Kết nối</html>", pnlConnect);
-        tabbedPane.addTab("<html><span style='font-family: \"Segoe UI Emoji\"'>📥</span> Quét để Tải App mới</html>", pnlDownload);
+        // --- NỬA DƯỚI: MÃ QR ĐỂ TẢI APP ---
+        JPanel pnlDownload = new JPanel(new BorderLayout());
+        pnlDownload.setBackground(Color.WHITE);
+        JLabel lblDownloadText = new JLabel("<html><center><i>Chưa có App? Dùng Zalo hoặc Camera quét mã dưới đây để tải về:</i></center></html>", SwingConstants.CENTER);
+        pnlDownload.add(lblDownloadText, BorderLayout.NORTH);
 
+        try {
+            // Tạo mã QR kích thước 220x220 cho link tải APK
+            JLabel lblQR = new JLabel(service.QRService.generateQRCode(downloadURL, 220, 220));
+            lblQR.setHorizontalAlignment(SwingConstants.CENTER);
+            pnlDownload.add(lblQR, BorderLayout.CENTER);
+        } catch (Exception e) {
+            pnlDownload.add(new JLabel("Lỗi tạo mã QR", SwingConstants.CENTER), BorderLayout.CENTER);
+        }
+
+        pnlConnect.add(pnlDownload, BorderLayout.CENTER);
+
+        // --- NÚT ĐÓNG ---
         JPanel pnlBottom = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        pnlBottom.setBackground(Color.WHITE);
         JButton btnClose = new JButton("Đóng hộp thoại");
         btnClose.setFont(new Font("Arial", Font.BOLD, 13));
         btnClose.addActionListener(e -> dialog.dispose());
         pnlBottom.add(btnClose);
 
-        dialog.add(tabbedPane, BorderLayout.CENTER);
+        dialog.add(pnlConnect, BorderLayout.CENTER);
         dialog.add(pnlBottom, BorderLayout.SOUTH);
 
-        dialog.pack();
+        dialog.setSize(450, 480);
+
+        // Lưu ý: Đổi chữ 'view' thành 'this' nếu bạn dán vào StartupDialog hoặc ClassManagementDialog
         dialog.setLocationRelativeTo(this);
         dialog.setVisible(true);
     }

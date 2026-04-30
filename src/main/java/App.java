@@ -46,5 +46,6 @@ public class App {
             // Hiển thị giao diện lên màn hình
             view.setVisible(true);
         });
+
     }
 }
