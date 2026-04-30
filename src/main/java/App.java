@@ -9,11 +9,6 @@ import java.awt.*;
 
 public class App {
     public static void main(String[] args) {
-        javax.swing.JOptionPane.showMessageDialog(null,
-                "1. Đường dẫn gốc (.): " + new java.io.File(".").getAbsolutePath() + "\n" +
-                        "2. Thư mục 'data' có tồn tại? " + new java.io.File("data").exists() + "\n" +
-                        "3. Thư mục 'classes' có tồn tại? " + new java.io.File("data/classes").exists()
-        );
 
         OMRBroadcaster.startBroadcasting();
         Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
