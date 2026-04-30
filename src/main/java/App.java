@@ -1,4 +1,5 @@
 
+import service.OMRBroadcaster;
 import view.MainView;
 
 import controller.MainController;
@@ -8,6 +9,7 @@ import java.awt.*;
 
 public class App {
     public static void main(String[] args) {
+        OMRBroadcaster.startBroadcasting();
         Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
             java.io.StringWriter sw = new java.io.StringWriter();
             throwable.printStackTrace(new java.io.PrintWriter(sw));

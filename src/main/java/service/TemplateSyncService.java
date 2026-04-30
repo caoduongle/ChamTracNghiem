@@ -10,25 +10,39 @@ import java.net.URL;
 
 public class TemplateSyncService {
 
-    // Đường dẫn tới file JSON của bạn trên Github
+    // [LƯU Ý]: Link này phải đảm bảo mở được trên trình duyệt web!
     private static final String TEMPLATE_JSON_URL = "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/templates.json";
 
-    // Lưu thẳng vào thư mục signatures để TemplateDetector dùng được ngay
+    // Thư mục lưu trữ
     private static final String SAVE_DIR = "data/templates/";
 
     public static void syncTemplates() {
-        // Chạy một luồng ngầm (Thread) để không làm đơ giao diện phần mềm lúc khởi động
         new Thread(() -> {
             try {
-                File dir = new File(SAVE_DIR);
-                if (!dir.exists()) dir.mkdirs();
+                System.out.println("========== [SYNC] BẮT ĐẦU ĐỒNG BỘ MẪU PHIẾU ==========");
 
-                // 1. Đọc nội dung file JSON từ Github
-                URL url = new URL(TEMPLATE_JSON_URL + "?t=" + System.currentTimeMillis()); // Thêm ?t= để chống cache
+                File dir = new File(SAVE_DIR);
+                if (!dir.exists()) {
+                    boolean created = dir.mkdirs();
+                    System.out.println("[SYNC] Tạo thư mục " + SAVE_DIR + ": " + (created ? "Thành công" : "Thất bại"));
+                }
+
+                System.out.println("[SYNC] Đang kết nối tới Github...");
+                URL url = new URL(TEMPLATE_JSON_URL + "?t=" + System.currentTimeMillis());
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("GET");
+                // Giả lập trình duyệt để không bị chặn
+                conn.setRequestProperty("User-Agent", "Mozilla/5.0");
                 conn.setConnectTimeout(5000);
                 conn.setReadTimeout(5000);
+
+                int responseCode = conn.getResponseCode();
+                System.out.println("[SYNC] Mã phản hồi từ Github: " + responseCode);
+
+                if (responseCode != 200) {
+                    System.err.println("[SYNC] ❌ LỖI: Không tìm thấy file JSON trên Github (Mã lỗi " + responseCode + "). Hãy kiểm tra lại link hoặc xem bạn đã Push file lên Github chưa!");
+                    return;
+                }
 
                 BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
                 StringBuilder response = new StringBuilder();
@@ -38,9 +52,11 @@ public class TemplateSyncService {
                 }
                 in.close();
 
-                // 2. Phân tích chuỗi JSON thủ công (Không cần thư viện ngoài)
                 String json = response.toString();
+                System.out.println("[SYNC] Đã đọc được file JSON dài " + json.length() + " ký tự.");
+
                 String[] items = json.split("\\}");
+                int successCount = 0;
 
                 for (String item : items) {
                     if (item.contains("\"id\"") && item.contains("\"url\"")) {
@@ -50,22 +66,29 @@ public class TemplateSyncService {
                         if (id != null && imgUrl != null) {
                             File imgFile = new File(SAVE_DIR + id + ".jpg");
 
-                            // 3. Nếu máy người dùng chưa có mẫu phiếu này -> Tiến hành tải về!
                             if (!imgFile.exists()) {
-                                System.out.println("Phát hiện mẫu phiếu mới trên Cloud. Đang tải: " + id + "...");
-                                downloadFile(imgUrl, imgFile);
-                                System.out.println("✅ Đã tải xong mẫu: " + id);
+                                System.out.println("[SYNC] Đang tải vân tay mới: " + id + ".jpg từ " + imgUrl);
+                                boolean success = downloadFile(imgUrl, imgFile);
+                                if(success) {
+                                    System.out.println("[SYNC] ✅ Đã lưu thành công: " + imgFile.getAbsolutePath());
+                                    successCount++;
+                                }
+                            } else {
+                                System.out.println("[SYNC] ⏭ Bỏ qua (Đã có sẵn trong máy): " + id + ".jpg");
                             }
                         }
                     }
                 }
+
+                System.out.println("[SYNC] HOÀN TẤT. Tải thành công " + successCount + " file mới.");
+
             } catch (Exception e) {
-                System.out.println("Cảnh báo: Không thể đồng bộ mẫu phiếu từ Cloud (Mất mạng hoặc link lỗi).");
+                System.err.println("[SYNC] ❌ Lỗi ngoại lệ trong quá trình đồng bộ: " + e.getMessage());
+                e.printStackTrace();
             }
         }).start();
     }
 
-    // Hàm hỗ trợ: Cắt chuỗi lấy giá trị của Key trong JSON
     private static String extractValue(String jsonPart, String key) {
         try {
             int keyIdx = jsonPart.indexOf(key);
@@ -79,17 +102,30 @@ public class TemplateSyncService {
         }
     }
 
-    // Hàm hỗ trợ: Tải file vật lý về máy
-    private static void downloadFile(String fileUrl, File targetFile) {
-        try (BufferedInputStream in = new BufferedInputStream(new URL(fileUrl).openStream());
-             FileOutputStream fileOutputStream = new FileOutputStream(targetFile)) {
-            byte dataBuffer[] = new byte[1024];
-            int bytesRead;
-            while ((bytesRead = in.read(dataBuffer, 0, 1024)) != -1) {
-                fileOutputStream.write(dataBuffer, 0, bytesRead);
+    private static boolean downloadFile(String fileUrl, File targetFile) {
+        try {
+            URL url = new URL(fileUrl);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0");
+
+            if (conn.getResponseCode() != 200) {
+                System.err.println("[SYNC] ❌ Lỗi không thể lấy ảnh (Mã " + conn.getResponseCode() + "): " + fileUrl);
+                return false;
             }
+
+            try (BufferedInputStream in = new BufferedInputStream(conn.getInputStream());
+                 FileOutputStream fileOutputStream = new FileOutputStream(targetFile)) {
+                byte[] dataBuffer = new byte[1024];
+                int bytesRead;
+                while ((bytesRead = in.read(dataBuffer, 0, 1024)) != -1) {
+                    fileOutputStream.write(dataBuffer, 0, bytesRead);
+                }
+            }
+            return true;
         } catch (Exception e) {
-            System.out.println("❌ Lỗi tải ảnh: " + fileUrl);
+            System.err.println("[SYNC] ❌ Lỗi khi lưu ảnh xuống ổ cứng: " + e.getMessage());
+            return false;
         }
     }
 }
