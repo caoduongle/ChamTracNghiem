@@ -17,7 +17,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class UpdateService {
-    public static final String CURRENT_VERSION = "2.1.0"; // NHỚ ĐỔI SỐ NÀY TRƯỚC KHI XUẤT FILE MỚI
+    public static final String CURRENT_VERSION = "2.1.1"; // NHỚ ĐỔI SỐ NÀY TRƯỚC KHI XUẤT FILE MỚI
     private static final String VERSION_URL = "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/version.txt";
     private static final String DOWNLOAD_BASE_URL = "https://github.com/caoduongle/ChamTracNghiem/releases/download/v";
     private static final String TEMPLATE_JSON_URL = "https://raw.githubusercontent.com/caoduongle/ChamTracNghiem/main/templates.json";

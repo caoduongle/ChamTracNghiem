@@ -9,6 +9,8 @@ import org.opencv.core.*;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 
+import java.io.File;
+import java.nio.file.Files;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,24 +32,26 @@ public class OMRService {
     }
 
     public static Map<String, String> processExam(String imagePath, ExamConfig config, String templateId) {
-        Mat src = Imgcodecs.imread(imagePath);
-        if (src.empty()) return null;
+        // [ĐÃ SỬA LỖI 1]: Tránh lỗi mù Unicode của Imgcodecs.imread trên Windows
+        Mat src = new Mat();
+        try {
+            byte[] imageBytes = Files.readAllBytes(new File(imagePath).toPath());
+            MatOfByte matOfByte = new MatOfByte(imageBytes);
+            src = Imgcodecs.imdecode(matOfByte, Imgcodecs.IMREAD_COLOR);
+            if (src.empty()) {
+                System.err.println("[OMRService] Lỗi: Bức ảnh rỗng sau khi giải mã: " + imagePath);
+                return null;
+            }
+        } catch (Exception e) {
+            System.err.println("[OMRService] Lỗi không thể đọc file ảnh: " + e.getMessage());
+            return null;
+        }
 
         String warpedPath = imagePath.replace(".jpg", "_processed.jpg");
         String debugPath = imagePath.replace(".jpg", "_debug_corners.jpg");
 
         List<Rect> cornerMarks = findCornerMarks(src);
 
-        // --- XUẤT ẢNH DEBUG 4 GÓC ---
-     /*   Mat debugImg = src.clone();
-        for (int i = 0; i < cornerMarks.size(); i++) {
-            Rect r = cornerMarks.get(i);
-            Imgproc.rectangle(debugImg, r, new Scalar(0, 0, 255), 3);
-            Imgproc.putText(debugImg, "Goc " + i, new Point(r.x, r.y - 10), Imgproc.FONT_HERSHEY_SIMPLEX, 1.0, new Scalar(0, 255, 255), 2);
-        }
-        Imgcodecs.imwrite(debugPath, debugImg);
-        System.out.println("[DEBUG] Số góc nhận diện được: " + cornerMarks.size() + " (Đã lưu tại: " + debugPath + ")");
-*/
         if (cornerMarks.size() < 4) return null;
 
         Mat warped = warpPerspective(src, cornerMarks, TARGET_WIDTH, TARGET_HEIGHT);
@@ -112,6 +116,112 @@ public class OMRService {
         Imgcodecs.imwrite(warpedPath, warped);
 
         return results;
+    }
+
+    public static List<Rect> findCornerMarks(Mat src) {
+        Mat gray = new Mat(), thresh = new Mat();
+        Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGR2GRAY);
+
+        // [ĐÃ SỬA LỖI 3]: Blur nhẹ để khử nhiễu + Adaptive Thresholding để chống bóng đổ
+        Imgproc.GaussianBlur(gray, gray, new Size(5, 5), 0);
+        Imgproc.adaptiveThreshold(gray, thresh, 255, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY_INV, 51, 10);
+
+        List<MatOfPoint> cnts = new ArrayList<>();
+        Imgproc.findContours(thresh, cnts, new Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+
+        List<Rect> res = new ArrayList<>();
+        double imgArea = src.width() * src.height();
+
+        for (MatOfPoint c : cnts) {
+            Rect r = Imgproc.boundingRect(c);
+            double area = Imgproc.contourArea(c);
+            double aspect = (double) r.width / r.height;
+            double extent = area / (r.width * r.height);
+
+            // Nới lỏng khoảng cách viền
+            boolean isScannerBorder = (r.x < 5 || r.y < 5 || r.x + r.width > src.cols() - 5 || r.y + r.height > src.rows() - 5);
+
+            // [ĐÃ SỬA LỖI 2]: Nới lỏng điều kiện tỷ lệ diện tích (0.0001 -> 0.05) và mức độ vuông vức (0.6)
+            if (!isScannerBorder && area / imgArea > 0.0001 && area / imgArea < 0.05 && aspect > 0.5 && aspect < 2.0) {
+                if (extent > 0.55) {
+                    res.add(r);
+                }
+            }
+        }
+
+        // [CƠ CHẾ DỰ PHÒNG]: Nếu Adaptive Thresholding quá nhiễu tìm được < 4 góc, quay về dùng Otsu
+        if (res.size() < 4) {
+            res.clear();
+            cnts.clear();
+            Imgproc.threshold(gray, thresh, 0, 255, Imgproc.THRESH_BINARY_INV | Imgproc.THRESH_OTSU);
+            Imgproc.findContours(thresh, cnts, new Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+
+            for (MatOfPoint c : cnts) {
+                Rect r = Imgproc.boundingRect(c);
+                double area = Imgproc.contourArea(c);
+                double aspect = (double) r.width / r.height;
+                double extent = area / (r.width * r.height);
+                boolean isScannerBorder = (r.x < 5 || r.y < 5 || r.x + r.width > src.cols() - 5 || r.y + r.height > src.rows() - 5);
+
+                if (!isScannerBorder && area / imgArea > 0.0001 && area / imgArea < 0.05 && aspect > 0.5 && aspect < 2.0) {
+                    if (extent > 0.55) {
+                        res.add(r);
+                    }
+                }
+            }
+        }
+
+        if (res.size() > 4) {
+            return filterTop4Corners(res, src.width(), src.height());
+        }
+
+        return res;
+    }
+
+    private static List<Rect> filterTop4Corners(List<Rect> rects, int width, int height) {
+        Rect tl = rects.get(0), tr = rects.get(0), bl = rects.get(0), br = rects.get(0);
+        double minDistTl = Double.MAX_VALUE, minDistTr = Double.MAX_VALUE;
+        double minDistBl = Double.MAX_VALUE, minDistBr = Double.MAX_VALUE;
+
+        for (Rect r : rects) {
+            Point p = new Point(r.x + r.width / 2.0, r.y + r.height / 2.0);
+            double dTl = Math.pow(p.x, 2) + Math.pow(p.y, 2);
+            double dTr = Math.pow(width - p.x, 2) + Math.pow(p.y, 2);
+            double dBl = Math.pow(p.x, 2) + Math.pow(height - p.y, 2);
+            double dBr = Math.pow(width - p.x, 2) + Math.pow(height - p.y, 2);
+
+            if (dTl < minDistTl) { minDistTl = dTl; tl = r; }
+            if (dTr < minDistTr) { minDistTr = dTr; tr = r; }
+            if (dBl < minDistBl) { minDistBl = dBl; bl = r; }
+            if (dBr < minDistBr) { minDistBr = dBr; br = r; }
+        }
+
+        List<Rect> corners = new ArrayList<>();
+        if (tl != null) corners.add(tl);
+        if (tr != null && !corners.contains(tr)) corners.add(tr);
+        if (br != null && !corners.contains(br)) corners.add(br);
+        if (bl != null && !corners.contains(bl)) corners.add(bl);
+
+        return corners;
+    }
+
+    public static Mat warpPerspective(Mat src, List<Rect> timingMarks, int targetW, int targetH) {
+        List<Point> centers = timingMarks.stream().map(r -> new Point(r.x + r.width/2.0, r.y + r.height/2.0)).collect(Collectors.toList());
+        Point tl=centers.get(0), tr=tl, bl=tl, br=tl;
+        double minS=1e9, maxS=-1e9, maxD1=-1e9, maxD2=-1e9;
+        for (Point p : centers) {
+            double s=p.x+p.y, d1=p.x-p.y, d2=p.y-p.x;
+            if(s<minS){minS=s; tl=p;} if(s>maxS){maxS=s; br=p;}
+            if(d1>maxD1){maxD1=d1; tr=p;} if(d2>maxD2){maxD2=d2; bl=p;}
+        }
+
+        double padX = 40, padY = 40;
+        MatOfPoint2f srcPoints = new MatOfPoint2f(tl, tr, br, bl);
+        MatOfPoint2f dstPoints = new MatOfPoint2f(new Point(padX, padY), new Point(targetW - padX, padY), new Point(targetW - padX, targetH - padY), new Point(padX, targetH - padY));
+        Mat m = Imgproc.getPerspectiveTransform(srcPoints, dstPoints);
+        Mat w = new Mat();
+        Imgproc.warpPerspective(src, w, m, new Size(targetW, targetH));
+        return w;
     }
 
     private static List<Integer> resolveGlobalYCoords(Mat thresh, List<Rect> boxes, int expectedRows) {
@@ -191,21 +301,16 @@ public class OMRService {
         return grid;
     }
 
-    // =================================================================================
-    // THUẬT TOÁN HYBRID: RĂNG LƯỢC + ĐIỂM NEO + ĐỒNG BỘ CHÉO (ULTIMATE VERSION)
-    // =================================================================================
     private static List<Integer> reconstructSequence(List<Integer> rawValues, int expectedCount, int offset, int span) {
         List<Integer> result = new ArrayList<>();
         double theoreticalGap = (double) span / expectedCount;
 
-        // TÌNH HUỐNG ZERO: Không có giọt mực nào -> Dùng toán học chia đều
         if (rawValues.isEmpty() || rawValues.size() < expectedCount / 3) {
             double start = offset + theoreticalGap / 2.0;
             for (int i = 0; i < expectedCount; i++) result.add((int) Math.round(start + i * theoreticalGap));
             return result;
         }
 
-        // BƯỚC 1: RĂNG LƯỢC RÀ SOÁT - Gom các vết mực gần nhau thành các Cụm (Clusters)
         Collections.sort(rawValues);
         List<Integer> clusters = new ArrayList<>();
         int currentSum = rawValues.get(0), count = 1;
@@ -219,36 +324,29 @@ public class OMRService {
         }
         clusters.add(currentSum / count);
 
-        // BƯỚC 2: TÌM KHOẢNG CÁCH CHUẨN (Median Gap) - Đo khoảng cách xuất hiện nhiều nhất
         List<Integer> gaps = new ArrayList<>();
         for (int i = 1; i < clusters.size(); i++) gaps.add(clusters.get(i) - clusters.get(i - 1));
         Collections.sort(gaps);
 
         double standardGap = gaps.isEmpty() ? theoreticalGap : gaps.get(gaps.size() / 2);
-        double tolerance = (clusters.size() == expectedCount) ? 0.35 : 0.20;
 
-        // [Kiểm tra chéo]: Nếu khoảng cách chuẩn sai lệch quá 20% do giấy bị nhăn nhúm nặng, ép về lý thuyết
         if (standardGap < theoreticalGap * 0.8 || standardGap > theoreticalGap * 1.2) {
             standardGap = theoreticalGap;
         }
 
-        // BƯỚC 3: KIỂM TRA SỐ LƯỢNG VÀ ĐỘ DÍNH/LỆCH HÀNG
         boolean needCorrection = false;
         if (clusters.size() != expectedCount) {
-            needCorrection = true; // Báo động: Thiếu hoặc thừa hàng/cột
+            needCorrection = true;
         } else {
-            // Rà soát lại xem có hàng nào dính vào nhau hoặc dãn cách bất thường không (Sai số > 15%)
             for (int gap : gaps) {
                 if (gap < standardGap * 0.85 || gap > standardGap * 1.15) {
-                    needCorrection = true; // Báo động: Bị dính dít hoặc đứt gãy
+                    needCorrection = true;
                     break;
                 }
             }
         }
 
-        // BƯỚC 4: KÍCH HOẠT ĐIỂM NEO KẾT HỢP RĂNG LƯỢC ĐỂ SỬA LỖI
         if (needCorrection) {
-            // A. Dùng Điểm Neo: Chốt 1 cụm mực vững chắc nhất ở GẦN GIỮA KHUNG TÍM
             int centerOfBox = offset + (span / 2);
             int bestAnchor = clusters.get(0);
             int minDiff = Math.abs(bestAnchor - centerOfBox);
@@ -257,12 +355,9 @@ public class OMRService {
                 if (diff < minDiff) { minDiff = diff; bestAnchor = c; }
             }
 
-            // B. Xác định Điểm Neo này là hàng/cột thứ mấy
             int anchorIndex = (int) Math.round((bestAnchor - (offset + standardGap / 2.0)) / standardGap);
             anchorIndex = Math.max(0, Math.min(anchorIndex, expectedCount - 1));
 
-            // C. Răng lược trượt vi chỉnh: Lấy Điểm Neo làm mốc, trượt nhẹ sang trái/phải
-            // để bộ khung bắt dính tối đa vào TẤT CẢ các cụm mực thật
             double bestStart = bestAnchor - (anchorIndex * standardGap);
             double minError = Double.MAX_VALUE;
 
@@ -275,26 +370,21 @@ public class OMRService {
                         double dist = Math.abs(c - tooth);
                         if (dist < minErrorToTooth) minErrorToTooth = dist;
                     }
-                    error += Math.min(minErrorToTooth, standardGap * 0.3); // Giới hạn lỗi chống nhiễu
+                    error += Math.min(minErrorToTooth, standardGap * 0.3);
                 }
                 if (error < minError) { minError = error; bestStart = s; }
             }
 
-            // Tái tạo lại toàn bộ mảng tọa độ hoàn hảo
             for (int i = 0; i < expectedCount; i++) result.add((int) Math.round(bestStart + i * standardGap));
         } else {
-            // Tình huống Lý tưởng: Đủ số lượng và khoảng cách hoàn hảo chuẩn mực -> Giữ nguyên
             result = new ArrayList<>(clusters);
         }
 
-        // BƯỚC 5: BẢO VỆ BIÊN (Kiểm tra lệch ra khỏi khung tím)
         for (int i = 0; i < result.size(); i++) {
             int val = result.get(i);
-            // Nếu bị văng ra khỏi mép trên/trái của khung -> Ép thụt vào trong
             if (val < offset + 5) {
                 result.set(i, offset + 5 + (int)(standardGap * 0.3));
             }
-            // Nếu bị văng ra khỏi mép dưới/phải của khung -> Ép thụt vào trong
             if (val > offset + span - 5) {
                 result.set(i, offset + span - 5 - (int)(standardGap * 0.3));
             }
@@ -438,85 +528,6 @@ public class OMRService {
         }
         clusters.add(currentSum / count);
         return clusters;
-    }
-
-    public static List<Rect> findCornerMarks(Mat src) {
-        Mat gray = new Mat(), thresh = new Mat();
-        Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGR2GRAY);
-        Imgproc.threshold(gray, thresh, 0, 255, Imgproc.THRESH_BINARY_INV | Imgproc.THRESH_OTSU);
-
-        List<MatOfPoint> cnts = new ArrayList<>();
-        Imgproc.findContours(thresh, cnts, new Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
-
-        List<Rect> res = new ArrayList<>();
-        double imgArea = src.width() * src.height();
-
-        for (MatOfPoint c : cnts) {
-            Rect r = Imgproc.boundingRect(c);
-            double area = Imgproc.contourArea(c);
-            double aspect = (double) r.width / r.height;
-            double extent = area / (r.width * r.height);
-
-            boolean isScannerBorder = (r.x < 2 || r.y < 2 || r.x + r.width > src.cols() - 2 || r.y + r.height > src.rows() - 2);
-
-            if (!isScannerBorder && area / imgArea > 0.0002 && area / imgArea < 0.02 && aspect > 0.6 && aspect < 1.5) {
-                if (extent > 0.75) {
-                    res.add(r);
-                }
-            }
-        }
-
-        if (res.size() > 4) {
-            return filterTop4Corners(res, src.width(), src.height());
-        }
-
-        return res;
-    }
-
-    private static List<Rect> filterTop4Corners(List<Rect> rects, int width, int height) {
-        Rect tl = rects.get(0), tr = rects.get(0), bl = rects.get(0), br = rects.get(0);
-        double minDistTl = Double.MAX_VALUE, minDistTr = Double.MAX_VALUE;
-        double minDistBl = Double.MAX_VALUE, minDistBr = Double.MAX_VALUE;
-
-        for (Rect r : rects) {
-            Point p = new Point(r.x + r.width / 2.0, r.y + r.height / 2.0);
-            double dTl = Math.pow(p.x, 2) + Math.pow(p.y, 2);
-            double dTr = Math.pow(width - p.x, 2) + Math.pow(p.y, 2);
-            double dBl = Math.pow(p.x, 2) + Math.pow(height - p.y, 2);
-            double dBr = Math.pow(width - p.x, 2) + Math.pow(height - p.y, 2);
-
-            if (dTl < minDistTl) { minDistTl = dTl; tl = r; }
-            if (dTr < minDistTr) { minDistTr = dTr; tr = r; }
-            if (dBl < minDistBl) { minDistBl = dBl; bl = r; }
-            if (dBr < minDistBr) { minDistBr = dBr; br = r; }
-        }
-
-        List<Rect> corners = new ArrayList<>();
-        if (tl != null) corners.add(tl);
-        if (tr != null && !corners.contains(tr)) corners.add(tr);
-        if (br != null && !corners.contains(br)) corners.add(br);
-        if (bl != null && !corners.contains(bl)) corners.add(bl);
-
-        return corners;
-    }
-
-    public static Mat warpPerspective(Mat src, List<Rect> timingMarks, int targetW, int targetH) {
-        List<Point> centers = timingMarks.stream().map(r -> new Point(r.x + r.width/2.0, r.y + r.height/2.0)).collect(Collectors.toList());
-        Point tl=centers.get(0), tr=tl, bl=tl, br=tl;
-        double minS=1e9, maxS=-1e9, maxD1=-1e9, maxD2=-1e9;
-        for (Point p : centers) {
-            double s=p.x+p.y, d1=p.x-p.y, d2=p.y-p.x;
-            if(s<minS){minS=s; tl=p;} if(s>maxS){maxS=s; br=p;}
-            if(d1>maxD1){maxD1=d1; tr=p;} if(d2>maxD2){maxD2=d2; bl=p;}
-        }
-
-        double padX = 40, padY = 40;
-        MatOfPoint2f srcPoints = new MatOfPoint2f(tl, tr, br, bl);
-        MatOfPoint2f dstPoints = new MatOfPoint2f(new Point(padX, padY), new Point(targetW - padX, padY), new Point(targetW - padX, targetH - padY), new Point(padX, targetH - padY));
-        Mat m = Imgproc.getPerspectiveTransform(srcPoints, dstPoints);
-        Mat w = new Mat();
-        Imgproc.warpPerspective(src, w, m, new Size(targetW, targetH));
-        return w;
     }
 
     private static String validatePart3Format(String val) {

@@ -12,7 +12,7 @@
         <dependency>
             <groupId>org.openpnp</groupId>
             <artifactId>opencv</artifactId>
-            <version>4.7.0-0</version>
+            <version>4.5.5-1</version> <!-- Bạn có thể đổi version theo ý muốn -->
         </dependency>
         <dependency>
             <groupId>org.apache.poi</groupId>
