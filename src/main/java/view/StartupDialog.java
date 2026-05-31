@@ -19,7 +19,7 @@ import java.util.List;
 public class StartupDialog extends JDialog {
     private JTable tblExams;
     private DefaultTableModel tableModel;
-    private JButton btnNew, btnOpen, btnDelete, btnTrash, btnTutorial, btnRename, btnBackToClass, btnConnectPhone;
+    private JButton btnNew, btnOpen, btnDelete, btnTrash, btnRename, btnBackToClass, btnConnectPhone;
     private String selectedExam = null;
     private boolean isNew = false;
     private boolean goBackToClass = false;
@@ -104,17 +104,19 @@ public class StartupDialog extends JDialog {
         btnRename = new JButton("📝 Đổi tên đề");
         btnDelete = new JButton("❌ Xóa đề");
         btnTrash = new JButton("🗑 Thùng rác");
-        btnTutorial = new JButton("Hướng dẫn");
         btnBackToClass = new JButton("⬅ Trở lại Chọn Lớp");
         btnBackToClass.setForeground(new Color(200, 50, 0));
 
         btnConnectPhone = new JButton("📱 Hướng dẫn kết nối App");
         btnConnectPhone.setBackground(new Color(240, 240, 240));
 
-        pnlBtns.add(btnConnectPhone); pnlBtns.add(btnOpen);
-        pnlBtns.add(btnNew); pnlBtns.add(btnRename);
-        pnlBtns.add(btnDelete); pnlBtns.add(btnTrash);
-        pnlBtns.add(btnTutorial); pnlBtns.add(btnBackToClass);
+        pnlBtns.add(wrapButtonWithHelp(btnConnectPhone, "Hướng dẫn kết nối App", "<b>Chức năng:</b> Kết nối ứng dụng di động làm máy quét camera.<br><br><b>Cách hoạt động:</b> Quét mã QR trên màn hình hoặc tải file APK về điện thoại để cài đặt. Đảm bảo cả máy tính và điện thoại kết nối cùng mạng Wi-Fi, sau đó mở app và chọn tự động dò tìm máy tính."));
+        pnlBtns.add(wrapButtonWithHelp(btnOpen, "Mở đề thi cũ", "<b>Chức năng:</b> Tiếp tục làm việc với một đề thi đã tạo.<br><br><b>Cách dùng:</b> Click chọn đề thi trong danh sách rồi bấm nút này (hoặc click đúp chuột vào tên đề thi) để vào màn hình chính chấm điểm."));
+        pnlBtns.add(wrapButtonWithHelp(btnNew, "Chấm đề mới", "<b>Chức năng:</b> Bắt đầu một ca chấm thi mới.<br><br><b>Cách dùng:</b> Nhấp chuột, nhập tên đề thi mới (ví dụ: 'Giữa kì 2') rồi nhấn OK. Hệ thống sẽ tạo cơ sở dữ liệu trống để bắt đầu nhận bài làm."));
+        pnlBtns.add(wrapButtonWithHelp(btnRename, "Đổi tên đề", "<b>Chức năng:</b> Sửa tên đề thi hiện có.<br><br><b>Cách dùng:</b> Chọn một đề thi trong danh sách, bấm đổi tên, nhập tên mới mong muốn và xác nhận."));
+        pnlBtns.add(wrapButtonWithHelp(btnDelete, "Xóa đề", "<b>Chức năng:</b> Xóa đề thi không còn sử dụng.<br><br><b>Cách dùng:</b> Chọn đề thi, bấm Xóa. Đề thi sẽ được chuyển tạm thời vào Thùng rác để tránh mất dữ liệu do sơ suất."));
+        pnlBtns.add(wrapButtonWithHelp(btnTrash, "Thùng rác", "<b>Chức năng:</b> Quản lý các đề thi đã xóa.<br><br><b>Cách dùng:</b> Nhấp vào để xem danh sách đề thi đã xóa. Tại đây, bạn có thể Khôi phục hoặc Xóa vĩnh viễn đề thi khỏi bộ nhớ máy tính."));
+        pnlBtns.add(wrapButtonWithHelp(btnBackToClass, "Trở lại Chọn Lớp", "<b>Chức năng:</b> Quay về giao diện Quản lý Lớp học.<br><br><b>Cách dùng:</b> Nhấp vào nút này để đóng bảng Đề thi hiện tại và quay về màn hình quản lý danh sách lớp."));
 
         pnlBottomControls.add(pnlBtns, BorderLayout.CENTER);
         add(pnlBottomControls, BorderLayout.SOUTH);
@@ -220,9 +222,6 @@ public class StartupDialog extends JDialog {
             dispose();
         });
 
-        btnTutorial.addActionListener(e -> {
-            new TutorialDialog(parent).setVisible(true);
-        });
 
         setLocationRelativeTo(parent);
         service.WindowPersistenceManager.restoreWindow(this, "StartupDialog", 650, 700);
@@ -337,4 +336,24 @@ public class StartupDialog extends JDialog {
     public String getSelectedExam() { return selectedExam; }
     public boolean isNew() { return isNew; }
     public boolean isGoBackToClass() { return goBackToClass; }
+
+    private JPanel wrapButtonWithHelp(JButton btn, String helpTitle, String helpHtml) {
+        JPanel wrapper = new JPanel(new BorderLayout(3, 0));
+        wrapper.setOpaque(false);
+        btn.setFocusPainted(false);
+        wrapper.add(btn, BorderLayout.CENTER);
+
+        JButton btnHelp = new JButton("?");
+        btnHelp.setPreferredSize(new Dimension(28, 0));
+        btnHelp.setMargin(new java.awt.Insets(0, 0, 0, 0));
+        btnHelp.setFont(new Font("Arial", Font.BOLD, 12));
+        btnHelp.setBackground(new Color(225, 225, 225));
+        btnHelp.setFocusPainted(false);
+        btnHelp.setToolTipText("Nhấp để xem hướng dẫn");
+        btnHelp.addActionListener(e -> {
+            HelpDialog.showHelp(btnHelp, helpTitle, helpHtml);
+        });
+        wrapper.add(btnHelp, BorderLayout.EAST);
+        return wrapper;
+    }
 }

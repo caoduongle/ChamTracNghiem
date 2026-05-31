@@ -75,14 +75,14 @@ public class MainView extends JFrame {
 
         // Ráp Component vào Panel Trái
         addSectionLabel(panelLeft, "HỆ THỐNG MẠNG");
-        addButton(panelLeft, btnConnectPhone);
+        addButtonWithHelp(panelLeft, btnConnectPhone, "Hướng dẫn kết nối App", "<b>Chức năng:</b> Hướng dẫn kết nối điện thoại làm máy quét.<br><br><b>Chi tiết:</b> Bảng hiển thị mã QR và liên kết tải file APK để cài app lên Android. Đảm bảo 2 máy dùng chung 1 mạng Wi-Fi LAN để việc nhận ảnh tự động diễn ra mượt mà nhất.");
 
         addSectionLabel(panelLeft, "QUẢN LÝ CHUNG");
-        addButton(panelLeft, btnBackToMenu);
-        addButton(panelLeft, btnSetAnswerKey);
+        addButtonWithHelp(panelLeft, btnBackToMenu, "Trở về Menu", "<b>Chức năng:</b> Đóng đề thi hiện tại để quay về giao diện Quản lý Đề thi.<br><br><b>Cách dùng:</b> Click vào đây khi muốn chuyển sang ca chấm đề thi khác hoặc chọn lớp khác.");
+        addButtonWithHelp(panelLeft, btnSetAnswerKey, "Cài đặt đáp án", "<b>Chức năng:</b> Cài đặt đáp án đúng cho từng câu hỏi của các mã đề thi.<br><br><b>Tiện ích:</b> Bạn có thể chọn nhập trực tiếp đáp án trên bảng, copy và paste đáp án từ file Excel, hoặc đặc biệt là dùng app điện thoại quét trực tiếp phiếu đáp án mẫu của giáo viên để tự động điền nhanh.");
 
         addSectionLabel(panelLeft, "MẪU PHIẾU CHẤM");
-        addComboBox(panelLeft, cbxTemplate);
+        addComboBoxWithHelp(panelLeft, cbxTemplate, "Chọn mẫu phiếu chấm", "<b>Chức năng:</b> Chọn mẫu phiếu thi tương ứng với phiếu học sinh làm bài.<br><br><b>Lưu ý:</b> Hệ thống hỗ trợ nhiều mẫu phiếu thông dụng như BGD4 (mẫu Bộ GD mới), BGD4.1, BGD3, QM, TNMAKER. Chọn đúng mẫu phiếu để thuật toán AI nhận diện tọa độ chấm chính xác 100%.");
 
         lblTemplatePreview = new JLabel("Chưa có ảnh mẫu", SwingConstants.CENTER);
         lblTemplatePreview.setPreferredSize(new Dimension(200, 270)); // Tỷ lệ xấp xỉ giấy A4
@@ -94,21 +94,21 @@ public class MainView extends JFrame {
         panelLeft.add(Box.createRigidArea(new Dimension(0, 8)));
 
         addSectionLabel(panelLeft, "CHẤM BÀI TRÊN PC");
-        addButton(panelLeft, btnStartGrading);
-        addButton(panelLeft, btnStopGrading);
+        addButtonWithHelp(panelLeft, btnStartGrading, "Bắt đầu chấm bài", "<b>Chức năng:</b> Kích hoạt chế độ lắng nghe và nhận ảnh bài làm tự động từ điện thoại.<br><br><b>Cách dùng:</b> Sau khi kết nối App và bấm nút này, bạn chỉ cần dùng điện thoại quét bài thi, kết quả chấm (điểm số, trạng thái bài lỗi) sẽ lập tức truyền tải và hiển thị trên bảng kết quả máy tính theo thời gian thực.");
+        addButtonWithHelp(panelLeft, btnStopGrading, "Dừng chấm bài", "<b>Chức năng:</b> Tạm dừng quá trình nhận bài thi tự động từ điện thoại.<br><br><b>Cách dùng:</b> Bấm khi hoàn thành xong ca chấm thi hoặc muốn cấu hình lại hệ thống mà không muốn bị gián đoạn.");
 
         addSectionLabel(panelLeft, "ĐỔI MÃ ĐỀ");
-        addButton(panelLeft, btnChangeSelectedCode);
-        addButton(panelLeft, btnBulkChangeCode);
+        addButtonWithHelp(panelLeft, btnChangeSelectedCode, "Đổi đề vùng chọn", "<b>Chức năng:</b> Đổi mã đề thi cho học sinh đang chọn trong bảng.<br><br><b>Cách dùng:</b> Trường hợp học sinh tô sai hoặc thiếu mã đề, bạn chọn dòng bài thi trong bảng kết quả, nhấp nút này và nhập mã đề đúng để hệ thống tự động tính toán lại điểm số ngay lập tức.");
+        addButtonWithHelp(panelLeft, btnBulkChangeCode, "Đổi đề hàng loạt", "<b>Chức năng:</b> Thay đổi mã đề đồng loạt cho danh sách kết quả chấm.<br><br><b>Ứng dụng:</b> Dành cho việc cấu hình lại hoặc sửa lỗi mã đề đồng loạt theo số thứ tự hoặc số báo danh.");
 
         addSectionLabel(panelLeft, "QUẢN LÝ BÀI THI");
-        addButton(panelLeft, btnDeleteResult);
-        addComboBox(panelLeft, cbxSortResults);
+        addButtonWithHelp(panelLeft, btnDeleteResult, "Xóa kết quả bài chọn", "<b>Chức năng:</b> Xóa bài thi đã chấm khỏi danh sách đề thi hiện tại.<br><br><b>Ứng dụng:</b> Dùng khi muốn chấm lại bài thi của học sinh bị chụp mờ, chụp sai hoặc muốn loại bỏ bài thi lỗi khỏi danh sách tính điểm.");
+        addComboBoxWithHelp(panelLeft, cbxSortResults, "Sắp xếp kết quả", "<b>Chức năng:</b> Sắp xếp danh sách học sinh theo các bộ lọc khác nhau.<br><br><b>Các tùy chọn:</b> Sắp xếp theo STT danh sách lớp, sắp xếp theo Điểm từ cao đến thấp để xếp loại học lực, hoặc đưa các bài bị lỗi (mờ ảnh, tô đúp...) lên đầu để dễ kiểm tra lại.");
 
         addSectionLabel(panelLeft, "THỐNG KÊ & XUẤT");
-        addButton(panelLeft, btnDashboard);
-        addButton(panelLeft, btnExportScores);
-        addButton(panelLeft, btnExportConfig);
+        addButtonWithHelp(panelLeft, btnDashboard, "Thống kê lớp", "<b>Chức năng:</b> Biểu đồ thống kê chi tiết kết quả đề thi.<br><br><b>Báo cáo:</b> Cung cấp biểu đồ phổ điểm trực quan, thống kê số lượng bài đạt Giỏi, Khá, Trung bình, Yếu, và phân tích chi tiết mức độ câu hỏi (câu nào nhiều học sinh làm đúng/sai nhất).");
+        addButtonWithHelp(panelLeft, btnExportScores, "Xuất Bảng Điểm Excel", "<b>Chức năng:</b> Xuất toàn bộ kết quả thi của lớp ra file Excel chi tiết.<br><br><b>Nội dung:</b> File Excel xuất ra chứa đầy đủ thông tin: STT, Số báo danh, Họ tên, Mã đề, Điểm số cụ thể và chi tiết đáp án từng câu của từng học sinh để nhập vào hệ thống quản lý trường học.");
+        addButtonWithHelp(panelLeft, btnExportConfig, "Xuất Đáp Án", "<b>Chức năng:</b> Xuất file cấu hình đáp án của đề thi hiện tại.<br><br><b>Cách dùng:</b> Xuất ra file để lưu trữ backup hoặc chia sẻ sang máy tính khác của các giáo viên chấm cùng khối.");
 
         JScrollPane scrollLeft = new JScrollPane(panelLeft);
         scrollLeft.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
@@ -186,10 +186,59 @@ public class MainView extends JFrame {
         panel.add(Box.createRigidArea(new Dimension(0, 8)));
     }
 
+    private void addButtonWithHelp(JPanel panel, JButton btn, String helpTitle, String helpHtml) {
+        JPanel wrapper = new JPanel(new BorderLayout(5, 0));
+        wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, 35));
+        wrapper.setAlignmentX(Component.CENTER_ALIGNMENT);
+        wrapper.setOpaque(false);
+
+        btn.setFocusPainted(false);
+        wrapper.add(btn, BorderLayout.CENTER);
+
+        JButton btnHelp = new JButton("?");
+        btnHelp.setPreferredSize(new Dimension(28, 35));
+        btnHelp.setMargin(new java.awt.Insets(0, 0, 0, 0));
+        btnHelp.setFont(new Font("Arial", Font.BOLD, 12));
+        btnHelp.setBackground(new Color(225, 225, 225));
+        btnHelp.setFocusPainted(false);
+        btnHelp.setToolTipText("Nhấp để xem hướng dẫn");
+        btnHelp.addActionListener(e -> {
+            HelpDialog.showHelp(btnHelp, helpTitle, helpHtml);
+        });
+
+        wrapper.add(btnHelp, BorderLayout.EAST);
+        panel.add(wrapper);
+        panel.add(Box.createRigidArea(new Dimension(0, 8)));
+    }
+
     private void addComboBox(JPanel panel, JComboBox<String> cbx) {
         cbx.setMaximumSize(new Dimension(Integer.MAX_VALUE, 35));
         cbx.setAlignmentX(Component.CENTER_ALIGNMENT);
         panel.add(cbx);
+        panel.add(Box.createRigidArea(new Dimension(0, 8)));
+    }
+
+    private void addComboBoxWithHelp(JPanel panel, JComboBox<String> cbx, String helpTitle, String helpHtml) {
+        JPanel wrapper = new JPanel(new BorderLayout(5, 0));
+        wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, 35));
+        wrapper.setAlignmentX(Component.CENTER_ALIGNMENT);
+        wrapper.setOpaque(false);
+
+        wrapper.add(cbx, BorderLayout.CENTER);
+
+        JButton btnHelp = new JButton("?");
+        btnHelp.setPreferredSize(new Dimension(28, 35));
+        btnHelp.setMargin(new java.awt.Insets(0, 0, 0, 0));
+        btnHelp.setFont(new Font("Arial", Font.BOLD, 12));
+        btnHelp.setBackground(new Color(225, 225, 225));
+        btnHelp.setFocusPainted(false);
+        btnHelp.setToolTipText("Nhấp để xem hướng dẫn");
+        btnHelp.addActionListener(e -> {
+            HelpDialog.showHelp(btnHelp, helpTitle, helpHtml);
+        });
+
+        wrapper.add(btnHelp, BorderLayout.EAST);
+        panel.add(wrapper);
         panel.add(Box.createRigidArea(new Dimension(0, 8)));
     }
 

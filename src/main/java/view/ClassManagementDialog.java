@@ -60,11 +60,15 @@ public class ClassManagementDialog extends JDialog {
         JButton btnConnectPhone = new JButton("📱 Hướng dẫn kết nối App");
         btnConnectPhone.setBackground(new Color(240, 240, 240));
 
-        pnlBtns.add(btnConnectPhone); pnlBtns.add(btnOpen);
-        pnlBtns.add(btnNew); pnlBtns.add(btnEdit);
-        pnlBtns.add(btnRename); pnlBtns.add(btnClassDashboard);
-        pnlBtns.add(btnDel); pnlBtns.add(btnTrash);
-        pnlBtns.add(btnSettings);
+        pnlBtns.add(wrapButtonWithHelp(btnConnectPhone, "Hướng dẫn kết nối App", "<b>Chức năng:</b> Quét mã QR tải app và xem cách tự động kết nối mạng LAN giữa điện thoại và máy tính.<br><br><b>Cách kết nối:</b> Đảm bảo cả PC và điện thoại dùng chung một mạng Wi-Fi (hoặc điện thoại bắt Wi-Fi phát ra từ máy tính). Mở app trên điện thoại và chọn tự động quét để kết nối nhanh."));
+        pnlBtns.add(wrapButtonWithHelp(btnOpen, "Chọn lớp học", "<b>Chức năng:</b> Vào màn hình quản lý đề thi của lớp đã chọn.<br><br><b>Cách dùng:</b> Click chọn một dòng lớp trong bảng, sau đó bấm nút này (hoặc click đúp chuột vào tên lớp) để tiến hành làm việc."));
+        pnlBtns.add(wrapButtonWithHelp(btnNew, "Tạo lớp học mới", "<b>Chức năng:</b> Tạo một lớp học mới để quản lý điểm và học sinh.<br><br><b>Cách dùng:</b> Nhấp nút, nhập tên lớp (VD: 12A1), sau đó hệ thống sẽ mở bảng danh sách học sinh để bạn nhập thủ công hoặc import từ Excel."));
+        pnlBtns.add(wrapButtonWithHelp(btnEdit, "Chỉnh sửa sĩ số & danh sách", "<b>Chức năng:</b> Thêm, sửa, xóa học sinh hoặc thay đổi sĩ số lớp học.<br><br><b>Tiện ích đặc biệt:</b> Bạn có thể copy danh sách từ Excel rồi dán (Ctrl+V) vào bảng học sinh, hoặc kéo thả trực tiếp file Excel chứa danh sách học sinh vào giao diện bảng để tự động import."));
+        pnlBtns.add(wrapButtonWithHelp(btnRename, "Đổi tên lớp học", "<b>Chức năng:</b> Đổi tên lớp hiện tại.<br><br><b>Lưu ý:</b> Thao tác này cực kỳ an toàn, chỉ đổi tên hiển thị và không làm thay đổi hay mất mát danh sách học sinh cũng như kết quả chấm thi trước đó."));
+        pnlBtns.add(wrapButtonWithHelp(btnClassDashboard, "Thống kê Tổng quan Lớp", "<b>Chức năng:</b> Xem bảng điểm tổng hợp học lực của lớp qua tất cả các đề thi.<br><br><b>Chi tiết:</b> Bảng hiển thị điểm số tích lũy của từng học sinh, điểm trung bình toàn diện, xếp loại học lực, và cung cấp biểu đồ trực quan giúp theo dõi sự tiến bộ của cả tập thể."));
+        pnlBtns.add(wrapButtonWithHelp(btnDel, "Xóa lớp học", "<b>Chức năng:</b> Xóa lớp học không còn sử dụng.<br><br><b>Cách hoạt động:</b> Lớp học sẽ được di chuyển vào <b>Thùng rác</b>. Bạn hoàn toàn có thể khôi phục lại lớp học này từ thùng rác nếu lỡ tay xóa nhầm."));
+        pnlBtns.add(wrapButtonWithHelp(btnTrash, "Thùng rác lớp học", "<b>Chức năng:</b> Quản lý lớp học đã xóa tạm thời.<br><br><b>Cách dùng:</b> Nhấp vào để xem danh sách các lớp đã xóa. Chọn lớp và bấm Khôi phục để đưa lớp trở lại danh sách dạy học, hoặc bấm Xóa vĩnh viễn để xóa hẳn khỏi đĩa cứng."));
+        pnlBtns.add(wrapButtonWithHelp(btnSettings, "Cài đặt hệ thống", "<b>Chức năng:</b> Cấu hình thông số kỹ thuật chung cho phần mềm.<br><br><b>Chi tiết:</b> Cho phép thay đổi cổng kết nối (Port), cấu hình thư mục lưu trữ, tinh chỉnh độ sáng, độ tương phản của thuật toán nhận diện OMR để tối ưu độ chính xác."));
 
         add(pnlBtns, BorderLayout.SOUTH);
 
@@ -262,6 +266,26 @@ public class ClassManagementDialog extends JDialog {
     }
 
     public ClassRoom getSelectedClass() { return selectedClass; }
+
+    private JPanel wrapButtonWithHelp(JButton btn, String helpTitle, String helpHtml) {
+        JPanel wrapper = new JPanel(new BorderLayout(3, 0));
+        wrapper.setOpaque(false);
+        btn.setFocusPainted(false);
+        wrapper.add(btn, BorderLayout.CENTER);
+
+        JButton btnHelp = new JButton("?");
+        btnHelp.setPreferredSize(new Dimension(28, 0));
+        btnHelp.setMargin(new java.awt.Insets(0, 0, 0, 0));
+        btnHelp.setFont(new Font("Arial", Font.BOLD, 12));
+        btnHelp.setBackground(new Color(225, 225, 225));
+        btnHelp.setFocusPainted(false);
+        btnHelp.setToolTipText("Nhấp để xem hướng dẫn");
+        btnHelp.addActionListener(e -> {
+            HelpDialog.showHelp(btnHelp, helpTitle, helpHtml);
+        });
+        wrapper.add(btnHelp, BorderLayout.EAST);
+        return wrapper;
+    }
 }
 
 class ClassEditorDialog extends JDialog {
