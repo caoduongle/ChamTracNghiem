@@ -626,7 +626,8 @@ public class MainController {
         pnlConnect.setBackground(Color.WHITE);
 
         // --- NỬA TRÊN: HƯỚNG DẪN KẾT NỐI LAN ---
-        JLabel lblInstruction = new JLabel("<html><center><font size='4'>Mở App trên điện thoại và bấm nút<br><b style='color:#007BFF;'>🔍 DÒ TÌM MÁY TÍNH</b><br>để tự động kết nối qua mạng LAN!</font></center></html>", SwingConstants.CENTER);
+        String localIP = service.LocalServer.getLocalIP();
+        JLabel lblInstruction = new JLabel("<html><center><font size='4'>Mở App trên điện thoại và bấm nút<br><b style='color:#007BFF;'>🔍 DÒ TÌM MÁY TÍNH</b><br>để tự động kết nối qua mạng LAN!</font><br><br><font size='3' color='#555555'>Hoặc nhập IP thủ công trên điện thoại:<br><b style='color:#E67E22; font-size: 15px;'>" + localIP + ":8080</b></font></center></html>", SwingConstants.CENTER);
         lblInstruction.setBorder(BorderFactory.createEmptyBorder(20, 20, 10, 20));
         pnlConnect.add(lblInstruction, BorderLayout.NORTH);
 

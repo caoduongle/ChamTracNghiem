@@ -105,7 +105,10 @@ public class GradingTask extends SwingWorker<Void, Object[]> {
     private void processSingleExam(String stt, File file, boolean useMultiThread, boolean autoClean, AtomicInteger currentCount, int totalFiles) {
         try {
             ExamConfig threadConfig = useMultiThread ? deepCloneConfig(currentConfig) : currentConfig;
-            String selectedCode = studentExamCodes.getOrDefault(stt, "Mặc định");
+            String selectedCode = studentExamCodes.get(stt);
+            if (selectedCode == null || selectedCode.trim().isEmpty() || selectedCode.equalsIgnoreCase("null")) {
+                selectedCode = "Mặc định";
+            }
             threadConfig.setActiveCode(selectedCode);
 
             Map<String, String> studentResults = OMRService.processExam(file.getAbsolutePath(), threadConfig, this.templateId);

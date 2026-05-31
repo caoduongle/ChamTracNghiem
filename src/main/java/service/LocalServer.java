@@ -364,22 +364,57 @@ public class LocalServer {
     public static String getLocalIP() {
         try {
             Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            String bestIp = null;
+            int bestScore = -9999;
+
             while (interfaces.hasMoreElements()) {
                 NetworkInterface iface = interfaces.nextElement();
                 String name = iface.getDisplayName().toLowerCase();
+                String ifaceName = iface.getName().toLowerCase();
 
-                // [CHỐT CHẶN BẢO VỆ JAVA 8]: Không dùng iface.isVirtual() vì sẽ gây crash trên Java 8
-                if (iface.isLoopback() || !iface.isUp() || name.contains("virtual") || name.contains("vmware")) continue;
+                if (iface.isLoopback() || !iface.isUp()) continue;
+
+                int score = 0;
+
+                // Ưu tiên cực cao Wi-Fi/Wireless
+                if (name.contains("wi-fi") || name.contains("wifi") || name.contains("wireless") || name.contains("wlan") || name.contains("802.11")) {
+                    score += 1000;
+                } else if (name.contains("ethernet")) {
+                    score += 100;
+                }
+
+                // Loại bỏ hoàn toàn card ảo/VPN/WSL
+                if (name.contains("virtual") || name.contains("vmware") || name.contains("vethernet") ||
+                    name.contains("wsl") || name.contains("virtualbox") || name.contains("vbox") ||
+                    name.contains("vpn") || name.contains("tap") || name.contains("tun") ||
+                    name.contains("zerotier") || name.contains("radmin") || name.contains("hamachi") ||
+                    name.contains("host-only") || name.contains("pseudo") ||
+                    ifaceName.contains("vbox") || ifaceName.contains("wsl") || ifaceName.contains("tap") || ifaceName.contains("tun")) {
+                    score -= 5000;
+                }
 
                 Enumeration<InetAddress> addresses = iface.getInetAddresses();
                 while (addresses.hasMoreElements()) {
                     InetAddress addr = addresses.nextElement();
                     if (addr instanceof java.net.Inet4Address) {
                         String ip = addr.getHostAddress();
-                        if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) return ip;
+                        int ipScore = score;
+
+                        if (ip.startsWith("192.168.56.")) {
+                            ipScore -= 500; // Trừ điểm card ảo VirtualBox mặc định
+                        }
+                        if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
+                            ipScore += 50;
+                        }
+
+                        if (ipScore > bestScore) {
+                            bestScore = ipScore;
+                            bestIp = ip;
+                        }
                     }
                 }
             }
+            if (bestIp != null) return bestIp;
         } catch (Exception ignored) {}
         return "127.0.0.1";
     }

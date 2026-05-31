@@ -98,7 +98,10 @@ public class ResultTableManager {
             boolean isPending = assignedFiles.containsKey(stt);
 
             String fileNameDisplay = "--- Chưa có ảnh ---";
-            String code = report != null && report.examCode != null ? report.examCode : studentExamCodes.getOrDefault(stt, "---");
+            String code = report != null && report.examCode != null ? report.examCode : studentExamCodes.get(stt);
+            if (code == null || code.trim().isEmpty() || code.equalsIgnoreCase("null") || code.equalsIgnoreCase("---")) {
+                code = "Mặc định";
+            }
             String score = report != null ? String.valueOf(report.totalScore) : "";
             String status = report != null ? report.statusMessage : "Chưa có bài";
 
