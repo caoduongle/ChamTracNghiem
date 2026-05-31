@@ -33,149 +33,168 @@ public class OMRService {
 
     public static Map<String, String> processExam(String imagePath, ExamConfig config, String templateId) {
         // [ĐÃ SỬA LỖI 1]: Tránh lỗi mù Unicode của Imgcodecs.imread trên Windows
-        Mat src = new Mat();
+        Mat src = null;
+        Mat warped = null;
+        Mat gray = null;
+        Mat thresh = null;
         try {
             byte[] imageBytes = Files.readAllBytes(new File(imagePath).toPath());
             MatOfByte matOfByte = new MatOfByte(imageBytes);
             src = Imgcodecs.imdecode(matOfByte, Imgcodecs.IMREAD_COLOR);
+            matOfByte.release();
             if (src.empty()) {
                 System.err.println("[OMRService] Lỗi: Bức ảnh rỗng sau khi giải mã: " + imagePath);
                 return null;
             }
+
+            String warpedPath = imagePath.replace(".jpg", "_processed.jpg");
+            String debugPath = imagePath.replace(".jpg", "_debug_corners.jpg");
+
+            List<Rect> cornerMarks = findCornerMarks(src);
+
+            if (cornerMarks.size() < 4) return null;
+
+            warped = warpPerspective(src, cornerMarks, TARGET_WIDTH, TARGET_HEIGHT);
+            OMRTemplate template = TemplateFactory.getTemplate(templateId);
+
+            gray = new Mat();
+            Imgproc.cvtColor(warped, gray, Imgproc.COLOR_BGR2GRAY);
+            thresh = new Mat();
+            int thresholdValue = DataManager.getOmrThreshold();
+            Imgproc.threshold(gray, thresh, thresholdValue, 255, Imgproc.THRESH_BINARY_INV);
+
+            List<Integer> rawXAnchors = new ArrayList<>();
+            List<Integer> rawYAnchors = new ArrayList<>();
+
+            for (AnchorZone zone : template.anchorZones) {
+                List<Integer> found = scanAnchorsInZone(thresh, warped, zone.region, zone.isX);
+                if (zone.isX) rawXAnchors.addAll(found); else rawYAnchors.addAll(found);
+            }
+
+            List<Integer> xAnchors = clusterLines(rawXAnchors);
+            List<Integer> yAnchors = clusterLines(rawYAnchors);
+            Map<String, String> results = new LinkedHashMap<>();
+
+            int p1Count = (config != null) ? config.getNumPart1() : 40;
+            int p2Count = (config != null) ? config.getNumPart2() : 8;
+            int p3Count = (config != null) ? config.getNumPart3() : 6;
+
+            // --- PHẦN 1 ---
+            int qCount = 0;
+            List<Rect> p1Boxes = new ArrayList<>();
+            for (RelativePart scheme : template.part1Boxes) p1Boxes.add(resolveAnchoredRect(scheme, xAnchors, yAnchors));
+
+            List<Integer> globalY1 = resolveGlobalYCoords(thresh, p1Boxes, template.p1ExpectedRows);
+            for (int i = 0; i < p1Boxes.size(); i++) {
+                if (qCount >= p1Count) break;
+                int questionsInThisBox = Math.min(template.p1ExpectedRows, p1Count - qCount);
+                results.putAll(autoPart1Scan(thresh, warped, p1Boxes.get(i), qCount, questionsInThisBox, template.p1ExpectedRows, globalY1));
+                qCount += template.p1ExpectedRows;
+            }
+
+            // --- PHẦN 2 ---
+            List<Rect> p2Boxes = new ArrayList<>();
+            for (int i = 0; i < Math.min(template.part2Boxes.size(), p2Count); i++) p2Boxes.add(resolveAnchoredRect(template.part2Boxes.get(i), xAnchors, yAnchors));
+
+            List<Integer> globalY2 = resolveGlobalYCoords(thresh, p2Boxes, template.p2ExpectedRows);
+            for (int i = 0; i < p2Boxes.size(); i++) {
+                results.putAll(autoPart2Scan(thresh, warped, p2Boxes.get(i), i, template.p2ExpectedRows, globalY2));
+            }
+
+            // --- PHẦN 3 ---
+            List<Rect> p3Boxes = new ArrayList<>();
+            for (int i = 0; i < Math.min(template.part3Boxes.size(), p3Count); i++) p3Boxes.add(resolveAnchoredRect(template.part3Boxes.get(i), xAnchors, yAnchors));
+
+            List<Integer> globalY3 = resolveGlobalYCoords(thresh, p3Boxes, template.p3ExpectedRows);
+            for (int i = 0; i < p3Boxes.size(); i++) {
+                String val = scanPart3(thresh, warped, p3Boxes.get(i), template.p3ExpectedRows, globalY3);
+                results.put("P3_Câu_" + (i + 1), validatePart3Format(val));
+            }
+
+            drawCoordinateRuler(warped);
+            drawAnchorIndices(warped, xAnchors, yAnchors);
+            Imgcodecs.imwrite(warpedPath, warped);
+
+            return results;
         } catch (Exception e) {
-            System.err.println("[OMRService] Lỗi không thể đọc file ảnh: " + e.getMessage());
+            System.err.println("[OMRService] Lỗi xử lý OMR: " + e.getMessage());
             return null;
+        } finally {
+            if (src != null) src.release();
+            if (warped != null) warped.release();
+            if (gray != null) gray.release();
+            if (thresh != null) thresh.release();
         }
-
-        String warpedPath = imagePath.replace(".jpg", "_processed.jpg");
-        String debugPath = imagePath.replace(".jpg", "_debug_corners.jpg");
-
-        List<Rect> cornerMarks = findCornerMarks(src);
-
-        if (cornerMarks.size() < 4) return null;
-
-        Mat warped = warpPerspective(src, cornerMarks, TARGET_WIDTH, TARGET_HEIGHT);
-        OMRTemplate template = TemplateFactory.getTemplate(templateId);
-
-        Mat gray = new Mat();
-        Imgproc.cvtColor(warped, gray, Imgproc.COLOR_BGR2GRAY);
-        Mat thresh = new Mat();
-        int thresholdValue = DataManager.getOmrThreshold();
-        Imgproc.threshold(gray, thresh, thresholdValue, 255, Imgproc.THRESH_BINARY_INV);
-
-        List<Integer> rawXAnchors = new ArrayList<>();
-        List<Integer> rawYAnchors = new ArrayList<>();
-
-        for (AnchorZone zone : template.anchorZones) {
-            List<Integer> found = scanAnchorsInZone(thresh, warped, zone.region, zone.isX);
-            if (zone.isX) rawXAnchors.addAll(found); else rawYAnchors.addAll(found);
-        }
-
-        List<Integer> xAnchors = clusterLines(rawXAnchors);
-        List<Integer> yAnchors = clusterLines(rawYAnchors);
-        Map<String, String> results = new LinkedHashMap<>();
-
-        int p1Count = (config != null) ? config.getNumPart1() : 40;
-        int p2Count = (config != null) ? config.getNumPart2() : 8;
-        int p3Count = (config != null) ? config.getNumPart3() : 6;
-
-        // --- PHẦN 1 ---
-        int qCount = 0;
-        List<Rect> p1Boxes = new ArrayList<>();
-        for (RelativePart scheme : template.part1Boxes) p1Boxes.add(resolveAnchoredRect(scheme, xAnchors, yAnchors));
-
-        List<Integer> globalY1 = resolveGlobalYCoords(thresh, p1Boxes, template.p1ExpectedRows);
-        for (int i = 0; i < p1Boxes.size(); i++) {
-            if (qCount >= p1Count) break;
-            int questionsInThisBox = Math.min(template.p1ExpectedRows, p1Count - qCount);
-            results.putAll(autoPart1Scan(thresh, warped, p1Boxes.get(i), qCount, questionsInThisBox, template.p1ExpectedRows, globalY1));
-            qCount += template.p1ExpectedRows;
-        }
-
-        // --- PHẦN 2 ---
-        List<Rect> p2Boxes = new ArrayList<>();
-        for (int i = 0; i < Math.min(template.part2Boxes.size(), p2Count); i++) p2Boxes.add(resolveAnchoredRect(template.part2Boxes.get(i), xAnchors, yAnchors));
-
-        List<Integer> globalY2 = resolveGlobalYCoords(thresh, p2Boxes, template.p2ExpectedRows);
-        for (int i = 0; i < p2Boxes.size(); i++) {
-            results.putAll(autoPart2Scan(thresh, warped, p2Boxes.get(i), i, template.p2ExpectedRows, globalY2));
-        }
-
-        // --- PHẦN 3 ---
-        List<Rect> p3Boxes = new ArrayList<>();
-        for (int i = 0; i < Math.min(template.part3Boxes.size(), p3Count); i++) p3Boxes.add(resolveAnchoredRect(template.part3Boxes.get(i), xAnchors, yAnchors));
-
-        List<Integer> globalY3 = resolveGlobalYCoords(thresh, p3Boxes, template.p3ExpectedRows);
-        for (int i = 0; i < p3Boxes.size(); i++) {
-            String val = scanPart3(thresh, warped, p3Boxes.get(i), template.p3ExpectedRows, globalY3);
-            results.put("P3_Câu_" + (i + 1), validatePart3Format(val));
-        }
-
-        drawCoordinateRuler(warped);
-        drawAnchorIndices(warped, xAnchors, yAnchors);
-        Imgcodecs.imwrite(warpedPath, warped);
-
-        return results;
     }
 
     public static List<Rect> findCornerMarks(Mat src) {
-        Mat gray = new Mat(), thresh = new Mat();
-        Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGR2GRAY);
-
-        // [ĐÃ SỬA LỖI 3]: Blur nhẹ để khử nhiễu + Adaptive Thresholding để chống bóng đổ
-        Imgproc.GaussianBlur(gray, gray, new Size(5, 5), 0);
-        Imgproc.adaptiveThreshold(gray, thresh, 255, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY_INV, 51, 10);
-
+        Mat gray = new Mat();
+        Mat thresh = new Mat();
+        Mat hierarchy = new Mat();
         List<MatOfPoint> cnts = new ArrayList<>();
-        Imgproc.findContours(thresh, cnts, new Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+        try {
+            Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGR2GRAY);
 
-        List<Rect> res = new ArrayList<>();
-        double imgArea = src.width() * src.height();
+            // [ĐÃ SỬA LỖI 3]: Blur nhẹ để khử nhiễu + Adaptive Thresholding để chống bóng đổ
+            Imgproc.GaussianBlur(gray, gray, new Size(5, 5), 0);
+            Imgproc.adaptiveThreshold(gray, thresh, 255, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY_INV, 51, 10);
 
-        for (MatOfPoint c : cnts) {
-            Rect r = Imgproc.boundingRect(c);
-            double area = Imgproc.contourArea(c);
-            double aspect = (double) r.width / r.height;
-            double extent = area / (r.width * r.height);
+            Imgproc.findContours(thresh, cnts, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
 
-            // Nới lỏng khoảng cách viền
-            boolean isScannerBorder = (r.x < 5 || r.y < 5 || r.x + r.width > src.cols() - 5 || r.y + r.height > src.rows() - 5);
-
-            // [ĐÃ SỬA LỖI 2]: Nới lỏng điều kiện tỷ lệ diện tích (0.0001 -> 0.05) và mức độ vuông vức (0.6)
-            if (!isScannerBorder && area / imgArea > 0.0001 && area / imgArea < 0.05 && aspect > 0.5 && aspect < 2.0) {
-                if (extent > 0.55) {
-                    res.add(r);
-                }
-            }
-        }
-
-        // [CƠ CHẾ DỰ PHÒNG]: Nếu Adaptive Thresholding quá nhiễu tìm được < 4 góc, quay về dùng Otsu
-        if (res.size() < 4) {
-            res.clear();
-            cnts.clear();
-            Imgproc.threshold(gray, thresh, 0, 255, Imgproc.THRESH_BINARY_INV | Imgproc.THRESH_OTSU);
-            Imgproc.findContours(thresh, cnts, new Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+            List<Rect> res = new ArrayList<>();
+            double imgArea = src.width() * src.height();
 
             for (MatOfPoint c : cnts) {
                 Rect r = Imgproc.boundingRect(c);
                 double area = Imgproc.contourArea(c);
                 double aspect = (double) r.width / r.height;
                 double extent = area / (r.width * r.height);
+
+                // Nới lỏng khoảng cách viền
                 boolean isScannerBorder = (r.x < 5 || r.y < 5 || r.x + r.width > src.cols() - 5 || r.y + r.height > src.rows() - 5);
 
+                // [ĐÃ SỬA LỖI 2]: Nới lỏng điều kiện tỷ lệ diện tích (0.0001 -> 0.05) và mức độ vuông vức (0.6)
                 if (!isScannerBorder && area / imgArea > 0.0001 && area / imgArea < 0.05 && aspect > 0.5 && aspect < 2.0) {
                     if (extent > 0.55) {
                         res.add(r);
                     }
                 }
             }
-        }
 
-        if (res.size() > 4) {
-            return filterTop4Corners(res, src.width(), src.height());
-        }
+            // [CƠ CHẾ DỰ PHÒNG]: Nếu Adaptive Thresholding quá nhiễu tìm được < 4 góc, quay về dùng Otsu
+            if (res.size() < 4) {
+                res.clear();
+                for (MatOfPoint c : cnts) c.release();
+                cnts.clear();
+                Imgproc.threshold(gray, thresh, 0, 255, Imgproc.THRESH_BINARY_INV | Imgproc.THRESH_OTSU);
+                Imgproc.findContours(thresh, cnts, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
 
-        return res;
+                for (MatOfPoint c : cnts) {
+                    Rect r = Imgproc.boundingRect(c);
+                    double area = Imgproc.contourArea(c);
+                    double aspect = (double) r.width / r.height;
+                    double extent = area / (r.width * r.height);
+                    boolean isScannerBorder = (r.x < 5 || r.y < 5 || r.x + r.width > src.cols() - 5 || r.y + r.height > src.rows() - 5);
+
+                    if (!isScannerBorder && area / imgArea > 0.0001 && area / imgArea < 0.05 && aspect > 0.5 && aspect < 2.0) {
+                        if (extent > 0.55) {
+                            res.add(r);
+                        }
+                    }
+                }
+            }
+
+            if (res.size() > 4) {
+                return filterTop4Corners(res, src.width(), src.height());
+            }
+
+            return res;
+        } finally {
+            gray.release();
+            thresh.release();
+            hierarchy.release();
+            for (MatOfPoint c : cnts) c.release();
+        }
     }
 
     private static List<Rect> filterTop4Corners(List<Rect> rects, int width, int height) {
@@ -221,6 +240,11 @@ public class OMRService {
         Mat m = Imgproc.getPerspectiveTransform(srcPoints, dstPoints);
         Mat w = new Mat();
         Imgproc.warpPerspective(src, w, m, new Size(targetW, targetH));
+        
+        srcPoints.release();
+        dstPoints.release();
+        m.release();
+        
         return w;
     }
 
@@ -401,19 +425,26 @@ public class OMRService {
 
         Mat roi = new Mat(thresh, safeBox);
         List<MatOfPoint> contours = new ArrayList<>();
-        Imgproc.findContours(roi, contours, new Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+        Mat hierarchy = new Mat();
+        try {
+            Imgproc.findContours(roi, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
 
-        List<Rect> bubbles = new ArrayList<>();
-        for (MatOfPoint c : contours) {
-            Rect r = Imgproc.boundingRect(c);
-            double aspect = (double) r.width / r.height;
-            if (r.width >= 12 && r.width <= 30 && aspect >= 0.7 && aspect <= 1.3) {
-                r.x += safeBox.x;
-                r.y += safeBox.y;
-                bubbles.add(r);
+            List<Rect> bubbles = new ArrayList<>();
+            for (MatOfPoint c : contours) {
+                Rect r = Imgproc.boundingRect(c);
+                double aspect = (double) r.width / r.height;
+                if (r.width >= 12 && r.width <= 30 && aspect >= 0.7 && aspect <= 1.3) {
+                    r.x += safeBox.x;
+                    r.y += safeBox.y;
+                    bubbles.add(r);
+                }
             }
+            return bubbles;
+        } finally {
+            roi.release();
+            hierarchy.release();
+            for (MatOfPoint c : contours) c.release();
         }
-        return bubbles;
     }
 
     private static Map<String, String> autoPart1Scan(Mat thresh, Mat warped, Rect hintBox, int startIdx, int numQuestions, int expectedRows, List<Integer> globalYCoords) {
@@ -426,7 +457,9 @@ public class OMRService {
             for (int col = 0; col < 4; col++) {
                 Rect outerBox = columns.get(col).get(row);
                 Rect innerBox = new Rect(outerBox.x + 5, outerBox.y + 5, 14, 14);
-                int px = Core.countNonZero(new Mat(thresh, innerBox));
+                Mat bubbleRoi = new Mat(thresh, innerBox);
+                int px = Core.countNonZero(bubbleRoi);
+                bubbleRoi.release();
                 Imgproc.rectangle(warped, innerBox, new Scalar(0, 255, 0), 1);
 
                 if (px > maxPx) { secondMaxPx = maxPx; secondBestCol = bestCol; maxPx = px; bestCol = col; }
@@ -449,7 +482,9 @@ public class OMRService {
             for (int col = 0; col < 2; col++) {
                 Rect outerBox = columns.get(col).get(row);
                 Rect innerBox = new Rect(outerBox.x + 5, outerBox.y + 5, 14, 14);
-                int px = Core.countNonZero(new Mat(thresh, innerBox));
+                Mat bubbleRoi = new Mat(thresh, innerBox);
+                int px = Core.countNonZero(bubbleRoi);
+                bubbleRoi.release();
                 Imgproc.rectangle(warped, innerBox, new Scalar(0, 255, 0), 1);
 
                 if (px > maxPx) { secondMaxPx = maxPx; secondBestCol = bestCol; maxPx = px; bestCol = col; }
@@ -472,7 +507,9 @@ public class OMRService {
             for (int r = 0; r < expectedRows; r++) {
                 Rect outerBox = columns.get(c).get(r);
                 Rect innerBox = new Rect(outerBox.x + 5, outerBox.y + 5, 14, 14);
-                int px = Core.countNonZero(new Mat(thresh, innerBox));
+                Mat bubbleRoi = new Mat(thresh, innerBox);
+                int px = Core.countNonZero(bubbleRoi);
+                bubbleRoi.release();
                 Imgproc.rectangle(warped, innerBox, new Scalar(0, 255, 0), 1);
 
                 if (px > maxPx) { maxPx = px; bestRow = r; }
@@ -497,19 +534,26 @@ public class OMRService {
         Imgproc.rectangle(warped, zone, new Scalar(255, 0, 0), 1);
         Mat roi = new Mat(thresh, zone);
         List<MatOfPoint> contours = new ArrayList<>();
-        Imgproc.findContours(roi, contours, new Mat(), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+        Mat hierarchy = new Mat();
+        try {
+            Imgproc.findContours(roi, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
 
-        for (MatOfPoint c : contours) {
-            Rect r = Imgproc.boundingRect(c);
-            double area = Imgproc.contourArea(c), extent = area / (r.width * r.height), aspect = (double) r.width / r.height;
-            if (r.width >= 7 && r.width <= 40 && aspect >= 0.6 && aspect <= 1.4 && extent >= 0.60) {
-                int globalX = zone.x + r.x + r.width / 2;
-                int globalY = zone.y + r.y + r.height / 2;
-                Imgproc.rectangle(warped, new Rect(zone.x + r.x, zone.y + r.y, r.width, r.height), new Scalar(0, 0, 255), 2);
-                anchors.add(isXAnchor ? globalX : globalY);
+            for (MatOfPoint c : contours) {
+                Rect r = Imgproc.boundingRect(c);
+                double area = Imgproc.contourArea(c), extent = area / (r.width * r.height), aspect = (double) r.width / r.height;
+                if (r.width >= 7 && r.width <= 40 && aspect >= 0.6 && aspect <= 1.4 && extent >= 0.60) {
+                    int globalX = zone.x + r.x + r.width / 2;
+                    int globalY = zone.y + r.y + r.height / 2;
+                    Imgproc.rectangle(warped, new Rect(zone.x + r.x, zone.y + r.y, r.width, r.height), new Scalar(0, 0, 255), 2);
+                    anchors.add(isXAnchor ? globalX : globalY);
+                }
             }
+            return anchors;
+        } finally {
+            roi.release();
+            hierarchy.release();
+            for (MatOfPoint c : contours) c.release();
         }
-        return anchors;
     }
 
     private static List<Integer> clusterLines(List<Integer> values) {

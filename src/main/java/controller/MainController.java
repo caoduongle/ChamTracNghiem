@@ -77,7 +77,7 @@ public class MainController {
     }
 
     private void startGlobalServer() {
-        service.LocalServer.startServer(8080, new service.LocalServer.ServerSyncListener() {
+        boolean success = service.LocalServer.startServer(8080, new service.LocalServer.ServerSyncListener() {
             @Override
             public void onImageReceived(String className, String examName, String stt, String templateId, String examCode, String imagePath) {
                 SwingUtilities.invokeLater(() -> {
@@ -117,9 +117,15 @@ public class MainController {
             }
         });
 
-        view.setTitle("Phần mềm Chấm Thi | 📡 IP: " + service.LocalServer.getLocalIP() + ":8080");
-        view.getLblServerStatus().setText("📡 Server: Online (" + service.LocalServer.getLocalIP() + ":8080)");
-        view.getLblServerStatus().setForeground(new Color(0, 150, 0));
+        if (success) {
+            view.setTitle("Phần mềm Chấm Thi | 📡 IP: " + service.LocalServer.getLocalIP() + ":8080");
+            view.getLblServerStatus().setText("📡 Server: Online (" + service.LocalServer.getLocalIP() + ":8080)");
+            view.getLblServerStatus().setForeground(new Color(0, 150, 0));
+        } else {
+            view.setTitle("Phần mềm Chấm Thi | ⚠️ CỔNG 8080 BỊ CHIẾM");
+            view.getLblServerStatus().setText("⚠️ Lỗi: Cổng 8080 đã bị ứng dụng khác chiếm dụng!");
+            view.getLblServerStatus().setForeground(new Color(211, 47, 47));
+        }
     }
 
     public void initApp() { showClassMenu(true); }

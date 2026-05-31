@@ -27,8 +27,8 @@ public class LocalServer {
         void onTemplateChanged(String className, String examName, String newTemplateId);
     }
 
-    public static void startServer(int port, ServerSyncListener listener) {
-        if (isRunning) return;
+    public static boolean startServer(int port, ServerSyncListener listener) {
+        if (isRunning) return true;
         try {
             server = HttpServer.create(new InetSocketAddress(port), 0);
 
@@ -51,8 +51,10 @@ public class LocalServer {
             server.start();
             isRunning = true;
             System.out.println("🚀 REST API SERVER V5 READY: http://" + getLocalIP() + ":" + port);
+            return true;
         } catch (Exception e) {
             e.printStackTrace();
+            return false;
         }
     }
 

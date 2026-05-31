@@ -26,7 +26,7 @@ public class UpdateService {
 
     public static void checkForUpdates(JFrame parentView) {
         // [TỰ ĐỘNG]: Ngay khi check Update, nó sẽ tự động đồng bộ Mẫu phiếu ngầm
-        syncTemplatesFromServer();
+        TemplateSyncService.syncTemplates();
 
         try {
             String noCacheUrl = VERSION_URL + "?t=" + System.currentTimeMillis();
@@ -47,59 +47,6 @@ public class UpdateService {
             }
         } catch (Exception e) {
             System.out.println("Không thể kiểm tra bản cập nhật.");
-        }
-    }
-
-    // =====================================================================
-    // [ĐÃ TỐI ƯU]: ĐỒNG BỘ MẪU PHIẾU KHÔNG CẦN THƯ VIỆN ORG.JSON
-    // =====================================================================
-    public static void syncTemplatesFromServer() {
-        new Thread(() -> {
-            try {
-                URL url = new URL(TEMPLATE_JSON_URL + "?t=" + System.currentTimeMillis());
-                BufferedReader in = new BufferedReader(new InputStreamReader(url.openStream()));
-                StringBuilder content = new StringBuilder();
-                String line;
-                while ((line = in.readLine()) != null) content.append(line);
-                in.close();
-
-                File dir = new File("data/templates");
-                if (!dir.exists()) dir.mkdirs();
-
-                // Sử dụng Regex để tách lấy "id" và "url" từ chuỗi JSON đơn giản
-                String json = content.toString();
-                Pattern pId = Pattern.compile("\"id\"\\s*:\\s*\"([^\"]+)\"");
-                Pattern pUrl = Pattern.compile("\"url\"\\s*:\\s*\"([^\"]+)\"");
-
-                String[] blocks = json.split("\\}");
-                for (String block : blocks) {
-                    Matcher mId = pId.matcher(block);
-                    Matcher mUrl = pUrl.matcher(block);
-
-                    if (mId.find() && mUrl.find()) {
-                        String id = mId.group(1);
-                        String downloadUrl = mUrl.group(2);
-                        File localFile = new File(dir, id + ".jpg");
-
-                        if (!localFile.exists()) {
-                            System.out.println("🚚 Đang tải mẫu phiếu mới từ Server: " + id);
-                            downloadFile(downloadUrl, localFile);
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                System.err.println("Không thể đồng bộ mẫu phiếu từ GitHub: " + e.getMessage());
-            }
-        }).start();
-    }
-
-    private static void downloadFile(String urlStr, File targetFile) throws IOException {
-        URL url = new URL(urlStr);
-        try (InputStream in = url.openStream();
-             FileOutputStream out = new FileOutputStream(targetFile)) {
-            byte[] buffer = new byte[8192];
-            int n;
-            while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
         }
     }
 

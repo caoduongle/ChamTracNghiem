@@ -1,6 +1,8 @@
 package service;
 
 import model.ExamSession;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,6 +19,7 @@ public class DataManager {
     private static final String PREF_FILE = "data/tutorial_hidden.flag";
     private static final String CLASS_DIR = "data/classes/";
     private static final String CLASS_TRASH_DIR = "data/classes/trash/";
+    private static final Gson gson = new GsonBuilder().setPrettyPrinting().serializeNulls().create();
 
     static {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -251,18 +254,27 @@ public class DataManager {
         try {
             File dir = new File(getExamDir(className));
             if (!dir.exists()) dir.mkdirs();
-            // [CLEAN CODE] Bọc BufferedOutputStream để tối ưu tốc độ I/O
-            try (ObjectOutputStream oos = new ObjectOutputStream(new BufferedOutputStream(new FileOutputStream(getExamDir(className) + session.getExamName() + ".dat")))) {
-                oos.writeObject(session);
+            File file = new File(getExamDir(className) + session.getExamName() + ".dat");
+            try (Writer writer = new OutputStreamWriter(new BufferedOutputStream(new FileOutputStream(file)), java.nio.charset.StandardCharsets.UTF_8)) {
+                gson.toJson(session, writer);
             }
         } catch (Exception e) { e.printStackTrace(); }
     }
 
     public static ExamSession loadSession(String examName, String className) {
-        // [CLEAN CODE] Bọc BufferedInputStream
-        try (ObjectInputStream ois = new ObjectInputStream(new BufferedInputStream(new FileInputStream(getExamDir(className) + examName + ".dat")))) {
-            return (ExamSession) ois.readObject();
-        } catch (Exception e) { return null; }
+        File file = new File(getExamDir(className) + examName + ".dat");
+        if (!file.exists()) return null;
+        try (Reader reader = new InputStreamReader(new BufferedInputStream(new FileInputStream(file)), java.nio.charset.StandardCharsets.UTF_8)) {
+            return gson.fromJson(reader, ExamSession.class);
+        } catch (Exception e) {
+            try (ObjectInputStream ois = new ObjectInputStream(new BufferedInputStream(new FileInputStream(file)))) {
+                ExamSession session = (ExamSession) ois.readObject();
+                saveSession(session, className);
+                return session;
+            } catch (Exception ex) {
+                return null;
+            }
+        }
     }
 
     public static List<String> listSavedExams(String className) {
@@ -337,18 +349,27 @@ public class DataManager {
     public static void saveClass(model.ClassRoom cr) {
         try {
             File dir = new File(CLASS_DIR); if (!dir.exists()) dir.mkdirs();
-            // [CLEAN CODE] Bọc BufferedOutputStream
-            try (ObjectOutputStream oos = new ObjectOutputStream(new BufferedOutputStream(new FileOutputStream(CLASS_DIR + cr.className + ".dat")))) {
-                oos.writeObject(cr);
+            File file = new File(CLASS_DIR + cr.className + ".dat");
+            try (Writer writer = new OutputStreamWriter(new BufferedOutputStream(new FileOutputStream(file)), java.nio.charset.StandardCharsets.UTF_8)) {
+                gson.toJson(cr, writer);
             }
         } catch (Exception e) { e.printStackTrace(); }
     }
 
     public static model.ClassRoom loadClass(String className) {
-        // [CLEAN CODE] Bọc BufferedInputStream
-        try (ObjectInputStream ois = new ObjectInputStream(new BufferedInputStream(new FileInputStream(CLASS_DIR + className + ".dat")))) {
-            return (model.ClassRoom) ois.readObject();
-        } catch (Exception e) { return null; }
+        File file = new File(CLASS_DIR + className + ".dat");
+        if (!file.exists()) return null;
+        try (Reader reader = new InputStreamReader(new BufferedInputStream(new FileInputStream(file)), java.nio.charset.StandardCharsets.UTF_8)) {
+            return gson.fromJson(reader, model.ClassRoom.class);
+        } catch (Exception e) {
+            try (ObjectInputStream ois = new ObjectInputStream(new BufferedInputStream(new FileInputStream(file)))) {
+                model.ClassRoom cr = (model.ClassRoom) ois.readObject();
+                saveClass(cr);
+                return cr;
+            } catch (Exception ex) {
+                return null;
+            }
+        }
     }
 
     public static List<String> listClasses() {
